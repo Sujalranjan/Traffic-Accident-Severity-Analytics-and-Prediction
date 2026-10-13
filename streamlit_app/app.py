@@ -197,15 +197,15 @@ if not filtered_df.empty:
     st.markdown("""
     This platform operates a dual-tier architecture:
     1. **Data Engineering Layer**:
-       - **Automated Ingestion**: Scheduled extracts from UK Road Safety benchmark records enriched with atmospheric variables from the **Open-Meteo API**.
+       - **Automated Ingestion**: Incremental loads of UK DfT Road Safety (STATS19) collisions, joined to hourly weather from the **Open-Meteo API** by grid cell and local hour.
        - **Quarantine & Validation**: Schema checks quarantine invalid coordinates or corrupted fields with audit logging prior to loading.
        - **Dimensional Star Schema**: Relational warehouse in **PostgreSQL / PostGIS** with dimensional models (`dim_date`, `dim_location`, `dim_road`, `dim_weather`, `dim_severity`) and aggregate marts.
        - **Orchestration**: Managed end-to-end via **Apache Airflow DAGs**.
     2. **MLOps Predictive Layer**:
-       - **Class Imbalance Handling**: Cost-sensitive weighting and boundary sampling for rare fatal collisions (<3%).
-       - **Experiment Tracking**: **MLflow** tracks parameters, macro-F1 metrics, and confusion matrix artifacts.
-       - **Model Serving**: REST API endpoints implemented with **FastAPI**.
-       - **Continuous Drift Monitoring**: Real-time statistical drift tracking (PSI and Kolmogorov-Smirnov) to detect covariate shift.
+       - **Class Imbalance Handling**: SMOTE plus class weights for rare fatal collisions (about 1.5% of records).
+       - **Experiment Tracking & Registry**: **MLflow** tracks parameters, macro-F1, recall and confusion matrices; the champion is registered with a `champion` alias.
+       - **Model Serving**: REST API endpoints implemented with **FastAPI**, with every prediction logged for monitoring.
+       - **Monitoring**: PSI / KS drift, class-mix shift and Fatal/Serious false-negative rates, with automatic retraining triggers.
     """)
     
     st.caption("Use the sidebar pages to inspect Temporal Dynamics, Environmental Risk, Geospatial Hotspots, Vehicle/Casualty Analysis, Live Inference, and Pipeline Audit/Drift Monitoring.")

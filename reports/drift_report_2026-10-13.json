@@ -1,0 +1,98 @@
+{
+  "timestamp": "2026-10-13T14:54:47.172074+00:00",
+  "reference_records": 359621,
+  "current_records": 154124,
+  "reference_period": [
+    "2021-01-01",
+    "2024-06-27"
+  ],
+  "current_period": [
+    "2024-06-27",
+    "2025-12-31"
+  ],
+  "feature_drift": {
+    "temperature_c": {
+      "ks_statistic": 0.0644,
+      "p_value": 0.0,
+      "psi": 0.0219,
+      "status": "STABLE",
+      "drift_detected": true
+    },
+    "precipitation_mm": {
+      "ks_statistic": 0.0366,
+      "p_value": 0.0,
+      "psi": 0.0079,
+      "status": "STABLE",
+      "drift_detected": true
+    },
+    "wind_speed_kmh": {
+      "ks_statistic": 0.0221,
+      "p_value": 0.0,
+      "psi": 0.0054,
+      "status": "STABLE",
+      "drift_detected": true
+    },
+    "speed_limit": {
+      "ks_statistic": 0.0327,
+      "p_value": 0.0,
+      "psi": 0.0098,
+      "status": "STABLE",
+      "drift_detected": true
+    }
+  },
+  "location_drift": {
+    "latitude_ks": 0.017,
+    "latitude_p_val": 0.0,
+    "longitude_ks": 0.016,
+    "longitude_p_val": 0.0,
+    "drift_detected": false
+  },
+  "class_distribution": {
+    "reference": {
+      "Fatal": 0.0147,
+      "Serious": 0.2203,
+      "Slight": 0.765
+    },
+    "current": {
+      "Fatal": 0.0146,
+      "Serious": 0.2439,
+      "Slight": 0.7415
+    },
+    "chi2": 342.6682,
+    "p_value": 0.0,
+    "max_share_change": 0.0236,
+    "drift_detected": true
+  },
+  "model_performance": {
+    "evaluated": true,
+    "records": 154124,
+    "macro_f1": 0.3704,
+    "fatal_fnr": 0.8278,
+    "serious_fnr": 0.8498,
+    "baseline": {
+      "model_version": "accident-severity-classifier/v1",
+      "macro_f1": 0.3688889878314485,
+      "accuracy": 0.6771820092912201,
+      "fatal_fnr": 0.8115044247787611,
+      "serious_fnr": 0.8478496008241051
+    }
+  },
+  "live_predictions": {
+    "logged_predictions": 0,
+    "labelled_predictions": 0
+  },
+  "thresholds": {
+    "psi_critical": 0.25,
+    "location_ks": 0.15,
+    "significance": 0.01,
+    "class_shift": 0.02,
+    "macro_f1_relative_drop": 0.1,
+    "fnr_increase": 0.1
+  },
+  "retraining_decision": {
+    "retrain_triggered": true,
+    "triggers": [
+      "Severity mix changed by 2.4% (chi-square p < 0.01)"
+    ]
+  }
+}

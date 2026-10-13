@@ -9,7 +9,7 @@ x-airflow-common: &airflow-common
     DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-traffic_accidents}
     MLFLOW_TRACKING_URI: http://mlflow:5000
     ACCIDENT_BATCH_SIZE: ${ACCIDENT_BATCH_SIZE:-}
-    WEATHER_GRID_DEG: ${WEATHER_GRID_DEG:-0.5}
+    WEATHER_GRID_DEG: ${WEATHER_GRID_DEG:-1.0}
     # Project dependencies needed by the DAG tasks (development convenience; bake a custom image for production)
     _PIP_ADDITIONAL_REQUIREMENTS: "python-dotenv scipy scikit-learn>=1.6,<1.7 lightgbm>=4.1,<5 xgboost>=2.0,<4 imbalanced-learn>=0.12,<0.15 mlflow>=3.1,<4 matplotlib"
   volumes:

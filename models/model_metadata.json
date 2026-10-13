@@ -1,0 +1,39 @@
+{
+  "registered_model_name": "accident-severity-classifier",
+  "registered_version": 1,
+  "alias": "champion",
+  "model_version": "accident-severity-classifier/v1",
+  "mlflow_run_id": "35538eed578d463e9c70565aa5be4d9d",
+  "champion_algorithm": "LightGBM",
+  "trained_at": "2026-10-13T14:54:22.917551+00:00",
+  "training_rows": 359621,
+  "features": {
+    "numeric": [
+      "hour",
+      "speed_limit",
+      "temperature_c",
+      "precipitation_mm",
+      "visibility_m",
+      "wind_speed_kmh",
+      "number_of_vehicles",
+      "number_of_casualties",
+      "hour_sin",
+      "hour_cos"
+    ],
+    "categorical": [
+      "day_name",
+      "time_of_day",
+      "urban_or_rural",
+      "road_type",
+      "light_conditions",
+      "road_surface_conditions",
+      "weather_condition"
+    ]
+  },
+  "baseline_test_metrics": {
+    "macro_f1": 0.3688889878314485,
+    "accuracy": 0.6771820092912201,
+    "fatal_fnr": 0.8115044247787611,
+    "serious_fnr": 0.8478496008241051
+  }
+}

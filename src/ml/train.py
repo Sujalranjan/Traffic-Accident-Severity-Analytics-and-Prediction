@@ -186,10 +186,12 @@ def train_and_evaluate_models():
     
     # Define hyperparameter-optimized candidate models
     models = {
+        # Tree size is capped so the serialized model stays small on ~800k SMOTE rows
         "RandomForest": RandomForestClassifier(
             n_estimators=150,
-            max_depth=14,
-            min_samples_split=4,
+            max_depth=12,
+            min_samples_leaf=20,
+            max_samples=0.3,
             class_weight="balanced_subsample",
             random_state=42,
             n_jobs=-1

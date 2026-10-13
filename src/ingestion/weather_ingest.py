@@ -2,7 +2,8 @@
 Ingestion script for the Open-Meteo Historical Weather API.
 
 For every accident waiting in staging, the location is snapped to a weather grid
-cell (WEATHER_GRID_DEG, default 0.5 degrees) and the time to the local hour. One API
+cell (WEATHER_GRID_DEG, default 1.0 degree, sized so a full
+5-year backfill fits the Open-Meteo free-tier daily limit) and the time to the local hour. One API
 request per grid cell and calendar year fetches the hourly series, the full responses
 are kept as a gzipped raw landing file, and only the hours that match an accident
 are loaded into stg_weather_raw. Failed requests are logged, never replaced by
@@ -32,7 +33,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("weather_ingest")
 
 OPEN_METEO_BASE = os.getenv("OPEN_METEO_BASE_URL", "https://archive-api.open-meteo.com/v1/archive")
-WEATHER_GRID_DEG = float(os.getenv("WEATHER_GRID_DEG", "0.5"))
+WEATHER_GRID_DEG = float(os.getenv("WEATHER_GRID_DEG", "1.0"))
 HOURLY_VARS = ["temperature_2m", "precipitation", "wind_speed_10m", "visibility", "weather_code"]
 REQUEST_PAUSE_S = float(os.getenv("OPEN_METEO_PAUSE_S", "0.2"))
 
