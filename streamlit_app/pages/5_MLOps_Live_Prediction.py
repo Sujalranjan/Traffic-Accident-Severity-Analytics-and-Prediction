@@ -1,6 +1,6 @@
 """
 Interactive Real-Time Severity Prediction Page.
-Queries the trained MLOps model pipeline or FastAPI endpoint to generate live risk estimates.
+Scores user-entered collision conditions with the registered champion model pipeline.
 """
 
 import sys
@@ -8,12 +8,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-import os
 import joblib
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
 import plotly.express as px
 
 st.set_page_config(page_title="Live Prediction | MLOps", layout="wide")
@@ -25,74 +23,15 @@ MODEL_PATH = Path("models/accident_severity_model.joblib")
 REPORT_PATH = Path("models/test_evaluation_report.json")
 
 
-class StandalonePredictor:
-    """Lightweight inference fallback for cloud environments without binary artifacts."""
-    def predict(self, df):
-        proba = self.predict_proba(df)[0]
-        return [np.argmax(proba)]
-
-    def predict_proba(self, df):
-        row = df.iloc[0]
-        cas = float(row.get("number_of_casualties", 1))
-        spd = float(row.get("speed_limit", 30))
-        veh = float(row.get("number_of_vehicles", 2))
-        dark = 1.0 if "Dark" in str(row.get("light_conditions", "")) else 0.0
-        bad_weather = 1.0 if any(x in str(row.get("weather_condition", "")) for x in ["Rain", "Snow", "Fog"]) else 0.0
-        
-        risk = 0.05 + 0.12 * min(cas, 4) + 0.005 * max(0, spd - 20) + 0.05 * min(veh, 4) + 0.1 * dark + 0.08 * bad_weather
-        p_fatal = float(np.clip(0.02 + 0.25 * (risk / 1.5), 0.01, 0.45))
-        p_serious = float(np.clip(0.15 + 0.35 * (risk / 1.5), 0.10, 0.50))
-        p_slight = float(max(0.05, 1.0 - p_fatal - p_serious))
-        total = p_slight + p_serious + p_fatal
-        return np.array([[p_slight/total, p_serious/total, p_fatal/total]])
-
-
-def _sanitize_unpickled_pipeline(pipeline):
-    """Recursively patches missing private attributes caused by cross-version unpickling."""
-    try:
-        def _patch(obj):
-            if hasattr(obj, "statistics_") and not hasattr(obj, "_fill_dtype"):
-                try:
-                    obj._fill_dtype = obj.statistics_.dtype
-                except Exception:
-                    pass
-            if hasattr(obj, "named_steps"):
-                for step in obj.named_steps.values():
-                    _patch(step)
-            if hasattr(obj, "transformers_"):
-                for item in obj.transformers_:
-                    if len(item) >= 2:
-                        _patch(item[1])
-            if hasattr(obj, "transformer_and_weights"):
-                for item in obj.transformer_and_weights:
-                    if len(item) >= 2:
-                        _patch(item[1])
-        _patch(pipeline)
-    except Exception:
-        pass
-    return pipeline
-
-
 @st.cache_resource
 def load_production_pipeline():
-    if MODEL_PATH.exists():
-        try:
-            pipe = joblib.load(MODEL_PATH)
-            pipe = _sanitize_unpickled_pipeline(pipe)
-            # Test dry-run inference to ensure scikit-learn version compatibility
-            dummy = pd.DataFrame([{
-                "hour": 12, "speed_limit": 30, "temperature_c": 15.0, "precipitation_mm": 0.0,
-                "visibility_m": 10000, "wind_speed_kmh": 10.0, "number_of_vehicles": 2,
-                "number_of_casualties": 1, "hour_sin": 0.0, "hour_cos": 1.0, "day_name": "Friday",
-                "time_of_day": "Midday", "urban_or_rural": "Urban", "road_type": "Single carriageway",
-                "light_conditions": "Daylight", "road_surface_conditions": "Dry",
-                "weather_condition": "Fine no high winds"
-            }])
-            pipe.predict(dummy)
-            return pipe
-        except Exception:
-            pass
-    return StandalonePredictor()
+    """Loads the registered champion pipeline; returns (pipeline, error message)."""
+    if not MODEL_PATH.exists():
+        return None, f"Model artifact not found at {MODEL_PATH}. Train it with `python src/ml/train.py`."
+    try:
+        return joblib.load(MODEL_PATH), None
+    except Exception as e:
+        return None, f"Model artifact could not be loaded ({e.__class__.__name__}: {e})."
 
 
 @st.cache_data
@@ -104,13 +43,13 @@ def load_model_metrics():
     return {}
 
 
-model_pipeline = load_production_pipeline()
+model_pipeline, model_error = load_production_pipeline()
 model_metrics = load_model_metrics()
 
 # Metrics Banner
 m1, m2, m3, m4 = st.columns(4)
-overall_acc = model_metrics.get("overall_accuracy", model_metrics.get("accuracy", 0.792))
-macro_f1 = model_metrics.get("macro avg", {}).get("f1-score", 0.32)
+overall_acc = model_metrics.get("overall_accuracy", model_metrics.get("accuracy", 0.0))
+macro_f1 = model_metrics.get("macro avg", {}).get("f1-score", 0.0)
 
 with m1:
     st.metric("Overall Model Accuracy", f"{overall_acc * 100:.1f}%", help="Percentage of correctly classified test incidents across all severity classes.")
@@ -126,7 +65,7 @@ with m4:
 st.divider()
 
 if model_pipeline is None:
-    st.error("Production model artifact not found. Please train model first via `python src/ml/train.py`.")
+    st.error(model_error)
 else:
     col_input, col_pred = st.columns([1.1, 1.2])
     
@@ -204,14 +143,8 @@ else:
             "weather_condition": weather_condition
         }])
         
-        # Predict with resilient exception safety
-        try:
-            pred_idx = int(model_pipeline.predict(input_data)[0])
-            probas = model_pipeline.predict_proba(input_data)[0]
-        except Exception:
-            fb = StandalonePredictor()
-            pred_idx = int(fb.predict(input_data)[0])
-            probas = fb.predict_proba(input_data)[0]
+        pred_idx = int(model_pipeline.predict(input_data)[0])
+        probas = model_pipeline.predict_proba(input_data)[0]
         
         class_labels = {0: "Slight", 1: "Serious", 2: "Fatal"}
         badge_colors = {"Fatal": "#EF4444", "Serious": "#F59E0B", "Slight": "#10B981"}
@@ -246,8 +179,8 @@ else:
             text=prob_df["Probability (%)"].apply(lambda v: f"{v:.1f}%")
         )
         fig_prob.update_layout(yaxis=dict(range=[0, 100]), height=280, showlegend=False)
-        st.plotly_chart(fig_prob, use_container_width=True)
+        st.plotly_chart(fig_prob, width="stretch")
         
         # Model Details
-        model_type = type(model_pipeline.named_steps["classifier"]).__name__ if hasattr(model_pipeline, "named_steps") else "Heuristic fallback (model artifact unavailable)"
+        model_type = type(model_pipeline.named_steps["classifier"]).__name__
         st.caption(f"Operational Model: `{model_type}` | Imbalance Handling: SMOTE + class weights")

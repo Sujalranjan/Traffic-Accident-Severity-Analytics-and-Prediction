@@ -43,28 +43,25 @@ def airflow_ingest_accidents(**context):
     print(f"Ingested accident batch: {batch_id}")
 
 
+# Downstream tasks work on everything still waiting in staging (batch_id=None), so rows
+# left behind by a failed run are picked up by the next run instead of being stranded.
+
 def airflow_ingest_weather(**context):
     from src.ingestion.weather_ingest import ingest_weather_for_accidents
-    ti = context["ti"]
-    batch_id = ti.xcom_pull(key="accident_batch_id", task_ids="ingest_raw_accidents")
-    weather_batch = ingest_weather_for_accidents(batch_id=batch_id)
+    weather_batch = ingest_weather_for_accidents(batch_id=None)
     print(f"Enriched atmospheric weather batch: {weather_batch}")
 
 
 def airflow_validate_and_quarantine(**context):
     from src.etl.validation import validate_and_quarantine
-    ti = context["ti"]
-    batch_id = ti.xcom_pull(key="accident_batch_id", task_ids="ingest_raw_accidents")
-    res = validate_and_quarantine(batch_id=batch_id)
+    res = validate_and_quarantine(batch_id=None)
     print(f"Validation complete: Total={res.get('total')}, Valid={res.get('valid')}, Quarantined={res.get('rejected')}")
 
 
 def airflow_transform_star_schema(**context):
     from src.etl.transform import run_etl_pipeline
-    ti = context["ti"]
-    batch_id = ti.xcom_pull(key="accident_batch_id", task_ids="ingest_raw_accidents")
     # Rejections were already persisted by the validate_and_quarantine task
-    result = run_etl_pipeline(batch_id=batch_id, persist_rejections=False)
+    result = run_etl_pipeline(batch_id=None, persist_rejections=False)
     print(f"Star schema load complete: {result}")
 
 
@@ -102,6 +99,8 @@ with DAG(
     description="Automated Traffic Accident Severity Analytics and MLOps Pipeline",
     schedule_interval="@daily",
     catchup=False,
+    # The pipeline is stateful (staging, incremental ingest), so runs must not overlap
+    max_active_runs=1,
     tags=["mlops", "data-engineering", "accident-severity"]
 ) as dag:
 

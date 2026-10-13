@@ -1,5 +1,9 @@
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.8.1-python3.10
+  # Custom image with the pipeline's Python packages baked in (see Dockerfile.airflow)
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+  image: traffic-airflow:2.8.1
   environment: &airflow-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/airflow_db
@@ -10,8 +14,6 @@ x-airflow-common: &airflow-common
     MLFLOW_TRACKING_URI: http://mlflow:5000
     ACCIDENT_BATCH_SIZE: ${ACCIDENT_BATCH_SIZE:-}
     WEATHER_GRID_DEG: ${WEATHER_GRID_DEG:-1.0}
-    # Project dependencies needed by the DAG tasks (development convenience; bake a custom image for production)
-    _PIP_ADDITIONAL_REQUIREMENTS: "python-dotenv scipy scikit-learn>=1.6,<1.7 lightgbm>=4.1,<5 xgboost>=2.0,<4 imbalanced-learn>=0.12,<0.15 mlflow>=3.1,<4 matplotlib"
   volumes:
     - ./dags:/opt/airflow/dags
     - ./src:/opt/airflow/src
@@ -66,9 +68,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      <<: *airflow-env
-      _PIP_ADDITIONAL_REQUIREMENTS: ""
     command: >
       bash -c "airflow db migrate &&
                airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin || true"

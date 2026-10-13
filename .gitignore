@@ -85,3 +85,5 @@ tmp/
 
 # Local source datasets
 datasets/
+# Local AI-agent tooling
+.agents/

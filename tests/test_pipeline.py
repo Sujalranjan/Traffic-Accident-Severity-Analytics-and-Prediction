@@ -154,3 +154,17 @@ def test_metrics_expose_failures_and_class_counts(client):
     text = client.get("/metrics").text
     assert "model_request_failures_total" in text
     assert 'model_predictions_total{severity="Slight"}' in text
+
+
+def test_revalidating_a_staged_batch_does_not_duplicate_quarantine(dft_csv, tmp_root):
+    from src.etl.validation import validate_and_quarantine
+    other = tmp_root / "dft_second_file.csv"
+    other.write_text(dft_csv.read_text(encoding="utf-8").replace("2024010000006", "2024019999006"), encoding="utf-8")
+    batch_id = ingest_accidents(source_file=other, download_if_missing=False)
+    before = _count("SELECT COUNT(*) FROM quarantine_rejected_records")
+    validate_and_quarantine(batch_id=batch_id)
+    once = _count("SELECT COUNT(*) FROM quarantine_rejected_records")
+    validate_and_quarantine(batch_id=batch_id)   # e.g. the next run after a failed transform
+    assert once == before + 1
+    assert _count("SELECT COUNT(*) FROM quarantine_rejected_records") == once
+    run_etl_pipeline(batch_id=batch_id, persist_rejections=False)

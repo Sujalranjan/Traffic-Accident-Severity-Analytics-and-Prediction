@@ -69,7 +69,7 @@ else:
             labels={"weather_condition": "Atmospheric Condition"}
         )
         fig_wea.update_layout(xaxis_tickangle=-30)
-        st.plotly_chart(fig_wea, use_container_width=True)
+        st.plotly_chart(fig_wea, width="stretch")
         
     with col2:
         st.subheader("Road Surface Conditions vs. Severity")
@@ -83,7 +83,7 @@ else:
             labels={"road_surface_conditions": "Road Surface State"}
         )
         fig_surf.update_layout(xaxis_tickangle=-30)
-        st.plotly_chart(fig_surf, use_container_width=True)
+        st.plotly_chart(fig_surf, width="stretch")
         
     st.divider()
     
@@ -110,7 +110,7 @@ else:
             labels={"value": "Percentage (%)", "speed_limit": "Speed Limit (MPH)", "variable": "Risk Metric"},
             title="Fatal & Serious Injury Rates Across Speed Limits"
         )
-        st.plotly_chart(fig_speed, use_container_width=True)
+        st.plotly_chart(fig_speed, width="stretch")
         
     with col4:
         st.subheader("Lighting Conditions Impact")
@@ -124,4 +124,4 @@ else:
             labels={"light_conditions": "Illumination"}
         )
         fig_light.update_layout(xaxis_tickangle=-30)
-        st.plotly_chart(fig_light, use_container_width=True)
+        st.plotly_chart(fig_light, width="stretch")

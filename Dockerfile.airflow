@@ -1,0 +1,22 @@
+# Airflow image with the project's pipeline dependencies baked in
+FROM apache/airflow:2.8.1-python3.10
+
+USER root
+# LightGBM needs the OpenMP runtime
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+# xgboost-cpu avoids the ~350 MB CUDA/NCCL wheel; email-validator and pyopenssl are
+# upgraded because MLflow 3 pulls newer pydantic and cryptography than Airflow 2.8 ships with.
+RUN pip install --no-cache-dir \
+    "python-dotenv>=1.0,<2" \
+    "scipy>=1.10,<2" \
+    "scikit-learn>=1.6,<1.7" \
+    "lightgbm>=4.1,<5" \
+    "xgboost-cpu>=2.1,<4" \
+    "imbalanced-learn>=0.12,<0.15" \
+    "mlflow>=3.1,<4" \
+    "matplotlib>=3.7,<4" \
+    "email-validator>=2.0" \
+    "pyopenssl>=25,<26"

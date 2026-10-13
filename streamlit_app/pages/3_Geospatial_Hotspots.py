@@ -124,7 +124,7 @@ else:
     
     col1, col2 = st.columns([1.5, 1])
     with col1:
-        st.dataframe(auth_summary, use_container_width=True, height=350)
+        st.dataframe(auth_summary, width="stretch", height=350)
     with col2:
         fig_top = px.bar(
             auth_summary.head(8),
@@ -136,4 +136,4 @@ else:
             title="Top Local Authorities (ONS code)"
         )
         fig_top.update_layout(yaxis=dict(autorange="reversed"))
-        st.plotly_chart(fig_top, use_container_width=True)
+        st.plotly_chart(fig_top, width="stretch")

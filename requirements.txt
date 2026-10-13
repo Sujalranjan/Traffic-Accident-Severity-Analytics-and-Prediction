@@ -9,7 +9,7 @@ pydantic>=2.5,<3
 python-dotenv>=1.0,<2
 
 # Visualization & Dashboard
-streamlit>=1.30,<2
+streamlit>=1.50,<2
 plotly>=5.18,<7
 pydeck>=0.8,<1
 matplotlib>=3.7,<4

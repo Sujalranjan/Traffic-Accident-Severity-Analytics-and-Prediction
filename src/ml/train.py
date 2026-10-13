@@ -20,12 +20,11 @@ import os
 import joblib
 import logging
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     classification_report, confusion_matrix, f1_score,
-    recall_score, precision_score, roc_auc_score
+    recall_score, roc_auc_score
 )
 from sklearn.pipeline import Pipeline
 from sklearn.utils.class_weight import compute_class_weight
@@ -166,8 +165,7 @@ def train_and_evaluate_models():
     logger.info("Fitting preprocessor on chronological training split...")
     X_train_proc = preprocessor.fit_transform(X_train)
     X_val_proc = preprocessor.transform(X_val)
-    X_test_proc = preprocessor.transform(X_test)
-    
+
     # 1. Apply SMOTE to synthesize minority samples for Fatal and Serious classes
     k_neighbors = min(4, sum(y_train == 2) - 1)
     if k_neighbors >= 1:
@@ -184,7 +182,7 @@ def train_and_evaluate_models():
     class_weight_dict = {cls: w for cls, w in zip(classes, weights)}
     logger.info(f"Calculated class weights: {class_weight_dict}")
     
-    # Define hyperparameter-optimized candidate models
+    # Candidate models (fixed hyperparameters)
     models = {
         # Tree size is capped so the serialized model stays small on ~800k SMOTE rows
         "RandomForest": RandomForestClassifier(
@@ -225,7 +223,7 @@ def train_and_evaluate_models():
     best_pipeline = None
     
     for name, model in models.items():
-        logger.info(f"--- Training {name} with SMOTE & Hyperparameter Optimization ---")
+        logger.info(f"--- Training {name} (SMOTE-resampled training split) ---")
         with mlflow.start_run(run_name=name):
             # Fit model on SMOTE resampled feature space
             model.fit(X_train_res, y_train_res)

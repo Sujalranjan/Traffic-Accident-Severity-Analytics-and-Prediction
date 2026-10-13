@@ -45,11 +45,11 @@ def generate_demo_dataframe(n: int = 2000, seed: int = 42) -> pd.DataFrame:
         n, p=norm_p([0.72, 0.20, 0.03, 0.05])
     )
     road_surfs   = np.random.choice(
-        ["Dry", "Wet or damp", "Frost or ice", "Snow", "Flood over 3cm"],
+        ["Dry", "Wet or damp", "Frost or ice", "Snow", "Flood over 3cm. deep"],
         n, p=norm_p([0.68, 0.26, 0.04, 0.015, 0.005])
     )
     weather_conds = np.random.choice(
-        ["Fine no high winds", "Raining no high winds", "Raining + high winds", "Fog or mist", "Snowing"],
+        ["Fine no high winds", "Raining no high winds", "Raining + high winds", "Fog or mist", "Snowing no high winds"],
         n, p=norm_p([0.75, 0.16, 0.04, 0.03, 0.02])
     )
     weather_risk  = [
@@ -71,14 +71,14 @@ def generate_demo_dataframe(n: int = 2000, seed: int = 42) -> pd.DataFrame:
         "Raining no high winds":  8.0,
         "Raining + high winds":   7.5,
         "Fog or mist":           10.0,
-        "Snowing":                1.5,
+        "Snowing no high winds":  1.5,
     }
     precip_map = {
         "Fine no high winds":    0.0,
         "Raining no high winds": 3.5,
         "Raining + high winds":  6.0,
         "Fog or mist":           0.5,
-        "Snowing":               1.0,
+        "Snowing no high winds": 1.0,
     }
 
     df = pd.DataFrame({

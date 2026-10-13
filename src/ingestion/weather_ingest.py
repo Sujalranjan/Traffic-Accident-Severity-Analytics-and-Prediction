@@ -36,6 +36,7 @@ OPEN_METEO_BASE = os.getenv("OPEN_METEO_BASE_URL", "https://archive-api.open-met
 WEATHER_GRID_DEG = float(os.getenv("WEATHER_GRID_DEG", "1.0"))
 HOURLY_VARS = ["temperature_2m", "precipitation", "wind_speed_10m", "visibility", "weather_code"]
 REQUEST_PAUSE_S = float(os.getenv("OPEN_METEO_PAUSE_S", "0.2"))
+MINUTE_LIMIT_RETRIES = 5
 
 
 class RateLimited(Exception):
@@ -157,7 +158,17 @@ def ingest_weather_for_accidents(batch_id: str = None) -> str:
             lat, lon = float(req.latitude), float(req.longitude)
             start_d, end_d = req.min[:10], req.max[:10]
             try:
-                payload = fetch_weather_series(lat, lon, start_d, end_d)
+                payload = None
+                for retry in range(MINUTE_LIMIT_RETRIES + 1):
+                    try:
+                        payload = fetch_weather_series(lat, lon, start_d, end_d)
+                        break
+                    except RateLimited as e:
+                        # The per-minute limit clears quickly; hourly/daily limits end the run
+                        if "Minutely" not in str(e) or retry == MINUTE_LIMIT_RETRIES:
+                            raise
+                        logger.info("Open-Meteo per-minute limit reached; waiting 60 s before retrying.")
+                        time.sleep(60)
             except RateLimited as e:
                 failures.append(f"{lat},{lon} {start_d}..{end_d}: rate limited")
                 rate_limited = True

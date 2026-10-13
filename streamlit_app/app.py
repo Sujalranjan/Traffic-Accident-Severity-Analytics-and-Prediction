@@ -13,7 +13,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from src.etl.db import get_engine
 
 st.set_page_config(
@@ -174,7 +173,7 @@ if not filtered_df.empty:
         )
         fig_donut.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#0F172A', width=2)))
         fig_donut.update_layout(showlegend=False, margin=dict(t=20, b=20, l=20, r=20))
-        st.plotly_chart(fig_donut, use_container_width=True)
+        st.plotly_chart(fig_donut, width="stretch")
         
     with c_right:
         st.subheader("Severity Distribution by Area Type")
@@ -189,7 +188,7 @@ if not filtered_df.empty:
             labels={"urban_or_rural": "Area Type", "Accidents": "Recorded Accidents"}
         )
         fig_bar.update_layout(margin=dict(t=20, b=20, l=20, r=20))
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width="stretch")
 
     # Architectural Overview Section
     st.divider()

@@ -34,17 +34,12 @@ with tab1:
     try:
         audit_df = pd.read_sql("SELECT * FROM ingestion_audit ORDER BY started_at DESC", con=engine)
         if not audit_df.empty:
-            st.dataframe(audit_df, use_container_width=True, height=300)
+            st.dataframe(audit_df, width="stretch", height=300)
         else:
             st.info("No audit logs recorded yet.")
     except Exception:
-        audit_df = pd.DataFrame([
-            {"batch_id": "batch_acc_b5d7b1f8", "source": "uk_road_safety_dft", "records_ingested": 2500, "status": "SUCCESS", "started_at": "2026-09-12 01:27:29"},
-            {"batch_id": "batch_wea_e3a104c2", "source": "open_meteo_api", "records_ingested": 2480, "status": "SUCCESS", "started_at": "2026-09-12 01:27:32"},
-            {"batch_id": "batch_etl_star_01", "source": "star_schema_loader", "records_ingested": 2450, "status": "SUCCESS", "started_at": "2026-09-12 01:27:38"}
-        ])
-        st.caption("ℹ️ Cloud Showcase Mode: Displaying benchmark ingestion audit trail.")
-        st.dataframe(audit_df, use_container_width=True, height=200)
+        st.info("The warehouse database is not reachable from this deployment, so no ingestion audit is available. "
+                "Run the pipeline locally or with Docker Compose to populate `ingestion_audit`.")
 
 with tab2:
     st.subheader("Quarantined Faulty Records (Error Log)")
@@ -56,28 +51,13 @@ with tab2:
                 st.metric("Total Quarantined Records", len(quarantine_df))
                 reason_counts = quarantine_df["rejection_reason"].value_counts().reset_index()
                 reason_counts.columns = ["Reason", "Count"]
-                st.dataframe(reason_counts, use_container_width=True)
+                st.dataframe(reason_counts, width="stretch")
             with c2:
-                st.dataframe(quarantine_df[["record_identifier", "rejection_reason", "rejected_at"]], use_container_width=True, height=260)
+                st.dataframe(quarantine_df[["record_identifier", "rejection_reason", "rejected_at"]], width="stretch", height=260)
         else:
             st.success("Zero quarantined records found in database.")
     except Exception:
-        quarantine_df = pd.DataFrame([
-            {"record_identifier": "ACC_BAD_001", "rejection_reason": "Out-of-range Speed Limit: 180 mph (Valid: 20-70)", "rejected_at": "2026-09-12 01:27:30"},
-            {"record_identifier": "ACC_BAD_002", "rejection_reason": "Invalid Latitude: 85.12 (Outside UK Bounding Box)", "rejected_at": "2026-09-12 01:27:30"},
-            {"record_identifier": "ACC_BAD_003", "rejection_reason": "Missing Severity Classification Code", "rejected_at": "2026-09-12 01:27:30"},
-            {"record_identifier": "ACC_BAD_004", "rejection_reason": "Negative Casualty Count: -2", "rejected_at": "2026-09-12 01:27:30"},
-            {"record_identifier": "ACC_BAD_005", "rejection_reason": "Corrupt Timestamp Format: 2026-99-99", "rejected_at": "2026-09-12 01:27:30"}
-        ])
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            st.metric("Total Quarantined Records", len(quarantine_df))
-            reason_counts = quarantine_df["rejection_reason"].value_counts().reset_index()
-            reason_counts.columns = ["Reason", "Count"]
-            st.dataframe(reason_counts, use_container_width=True)
-        with c2:
-            st.caption("ℹ️ Cloud Showcase Mode: Displaying validated quarantine gate logs.")
-            st.dataframe(quarantine_df[["record_identifier", "rejection_reason", "rejected_at"]], use_container_width=True, height=260)
+        st.info("The warehouse database is not reachable from this deployment, so no quarantine log is available.")
 
 with tab3:
     st.subheader("Statistical Drift Detection & Retraining Triggers")
@@ -129,7 +109,7 @@ with tab3:
                 "Status": metrics.get("status"),
                 "Drift Detected": metrics.get("drift_detected")
             })
-        st.dataframe(pd.DataFrame(drift_rows), use_container_width=True)
+        st.dataframe(pd.DataFrame(drift_rows), width="stretch")
         
         # Location & Class Shifts
         c1, c2 = st.columns(2)

@@ -173,10 +173,11 @@ def run_etl_pipeline(batch_id: str = None, persist_rejections: bool = True) -> d
         "weather_condition": df["weather_condition"],
         "weather_description": df["weather_description"],
         "weather_code": pd.to_numeric(df["weather_code"], errors="coerce").astype("Int64"),
-        "temperature_c": df["temperature_2m"],
-        "precipitation_mm": df["precipitation"],
-        "visibility_m": df["visibility"],
-        "wind_speed_kmh": df["wind_speed_10m"],
+        # to_numeric keeps all-null columns (visibility is never returned by the archive API) numeric
+        "temperature_c": pd.to_numeric(df["temperature_2m"], errors="coerce"),
+        "precipitation_mm": pd.to_numeric(df["precipitation"], errors="coerce"),
+        "visibility_m": pd.to_numeric(df["visibility"], errors="coerce"),
+        "wind_speed_kmh": pd.to_numeric(df["wind_speed_10m"], errors="coerce"),
         "weather_risk_level": df["weather_risk_level"],
         "weather_source": df["weather_source"],
     }).drop_duplicates(subset=["weather_nk"])

@@ -91,6 +91,17 @@ def validate_and_quarantine(batch_id: str = None, persist: bool = True) -> dict:
             "raw_payload": rejected_df.apply(lambda r: r.to_json(), axis=1),
             "rejected_at": now,
         })
+
+        # A batch left in staging by a failed run is validated again on the next run;
+        # don't log the same rejection twice.
+        already = pd.read_sql(
+            "SELECT batch_id, record_identifier, rejection_reason FROM quarantine_rejected_records",
+            con=engine,
+        )
+        if not already.empty:
+            key = ["batch_id", "record_identifier", "rejection_reason"]
+            seen = quarantine[key].merge(already.drop_duplicates(), on=key, how="left", indicator=True)["_merge"].eq("both")
+            quarantine = quarantine[~seen.values]
         quarantine.to_sql("quarantine_rejected_records", con=engine, if_exists="append", index=False, chunksize=5000)
 
         # Record rejected counts against each batch's ingestion audit row

@@ -4,6 +4,7 @@ Database connection manager supporting PostgreSQL with transparent fallback to S
 
 import os
 import sys
+import uuid
 import logging
 from pathlib import Path
 
@@ -154,20 +155,31 @@ def insert_ignore_duplicates(engine, df: pd.DataFrame, table: str, conflict_cols
     """
     Bulk-inserts a DataFrame, skipping rows that violate the table's unique key.
     Loads into a scratch table first so the insert is one set-based statement
-    on both SQLite and PostgreSQL.
+    on both SQLite and PostgreSQL. The scratch table name is unique per call so
+    concurrent runs never collide.
     """
     if df.empty:
         return
-    tmp = f"tmp_load_{table}"
+    tmp = f"tmp_load_{table}_{uuid.uuid4().hex[:8]}"
     cols = ", ".join(df.columns)
-    df.to_sql(tmp, con=engine, if_exists="replace", index=False, chunksize=5000)
-    if is_sqlite(engine):
-        sql = f"INSERT OR IGNORE INTO {table} ({cols}) SELECT {cols} FROM {tmp}"
-    else:
-        sql = f"INSERT INTO {table} ({cols}) SELECT {cols} FROM {tmp} ON CONFLICT ({', '.join(conflict_cols)}) DO NOTHING"
-    with engine.begin() as conn:
-        conn.execute(text(sql))
-        conn.execute(text(f"DROP TABLE IF EXISTS {tmp}"))
+    try:
+        df.to_sql(tmp, con=engine, if_exists="replace", index=False, chunksize=5000)
+        if is_sqlite(engine):
+            sql = f"INSERT OR IGNORE INTO {table} ({cols}) SELECT {cols} FROM {tmp}"
+        else:
+            # Cast each scratch column to the target type: pandas writes an all-null column as TEXT,
+            # which PostgreSQL will not insert into a NUMERIC/DATE column without a cast.
+            types = pd.read_sql(
+                text("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = :t"),
+                con=engine, params={"t": table},
+            ).set_index("column_name")["data_type"].to_dict()
+            select = ", ".join(f"CAST({c} AS {types[c]})" if c in types else c for c in df.columns)
+            sql = f"INSERT INTO {table} ({cols}) SELECT {select} FROM {tmp} ON CONFLICT ({', '.join(conflict_cols)}) DO NOTHING"
+        with engine.begin() as conn:
+            conn.execute(text(sql))
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {tmp}"))
 
 
 def reset_db(engine=None):

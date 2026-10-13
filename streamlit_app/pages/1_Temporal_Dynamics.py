@@ -67,7 +67,7 @@ else:
         aspect="auto"
     )
     fig_heatmap.update_layout(height=400)
-    st.plotly_chart(fig_heatmap, use_container_width=True)
+    st.plotly_chart(fig_heatmap, width="stretch")
     
     # 2. Rush Hour vs Non-Rush Hour Analysis
     col1, col2 = st.columns(2)
@@ -85,7 +85,7 @@ else:
             color_discrete_map={"Fatal": "#EF4444", "Serious": "#F59E0B", "Slight": "#38BDF8"},
             barmode="stack"
         )
-        st.plotly_chart(fig_tod, use_container_width=True)
+        st.plotly_chart(fig_tod, width="stretch")
         
     with col2:
         st.subheader("Casualty Comparison: Weekday vs. Weekend")
@@ -102,4 +102,4 @@ else:
             barmode="group",
             labels={"number_of_casualties": "Total Casualties Recorded"}
         )
-        st.plotly_chart(fig_wk, use_container_width=True)
+        st.plotly_chart(fig_wk, width="stretch")

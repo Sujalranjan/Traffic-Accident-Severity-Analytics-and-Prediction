@@ -63,7 +63,7 @@ else:
             color_discrete_map={"Fatal": "#EF4444", "Serious": "#F59E0B", "Slight": "#38BDF8"},
             labels={"number_of_vehicles": "Vehicles Involved"}
         )
-        st.plotly_chart(fig_veh, use_container_width=True)
+        st.plotly_chart(fig_veh, width="stretch")
         
     with c2:
         st.subheader("Casualty Count Distribution")
@@ -76,7 +76,7 @@ else:
             color_discrete_map={"Fatal": "#EF4444", "Serious": "#F59E0B", "Slight": "#38BDF8"},
             labels={"number_of_casualties": "Total Casualties"}
         )
-        st.plotly_chart(fig_cas, use_container_width=True)
+        st.plotly_chart(fig_cas, width="stretch")
         
     st.divider()
     
@@ -89,4 +89,4 @@ else:
         color="Accident Count",
         color_continuous_scale="Tealgrn"
     )
-    st.plotly_chart(fig_road_veh, use_container_width=True)
+    st.plotly_chart(fig_road_veh, width="stretch")
