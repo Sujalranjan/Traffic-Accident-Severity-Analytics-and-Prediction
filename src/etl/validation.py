@@ -12,133 +12,119 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 import json
 import logging
 import datetime
+import numpy as np
 import pandas as pd
 from sqlalchemy import text
-from src.etl.db import get_engine
+from src.etl.db import DATA_DIR, get_engine
+from src.etl.standardize import parse_accident_date, parse_accident_time
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("data_validation")
 
+# Rules are applied in order; a record is quarantined with the first rule it fails.
+RULES = [
+    ("VR-01", "INVALID_COORDINATES: Lat/Lon missing or outside UK bounds (49.0-61.5 N, -8.5-2.5 E)"),
+    ("VR-03", "INVALID_DATETIME: Date (DD/MM/YYYY) or time (HH:MM) missing or unparseable"),
+    ("VR-02", "INVALID_SPEED_LIMIT: Speed limit missing or not in range [10, 100] (DfT -1 = missing)"),
+    ("VR-04", "INVALID_SEVERITY: Severity not mapped to 1, 2, or 3"),
+    ("VR-05", "DUPLICATE_ACCIDENT_INDEX: Index missing, repeated in batch, or already loaded"),
+]
 
-def validate_and_quarantine(batch_id: str = None) -> dict:
+
+def rule_failures(df: pd.DataFrame, existing_indices: set) -> dict:
+    """Returns {rule_id: boolean Series of failing rows}."""
+    lat = pd.to_numeric(df["latitude"], errors="coerce")
+    lon = pd.to_numeric(df["longitude"], errors="coerce")
+    speed = pd.to_numeric(df["speed_limit"], errors="coerce")
+    severity = pd.to_numeric(df["accident_severity"], errors="coerce")
+    index = df["accident_index"].astype("string").str.strip()
+
+    return {
+        "VR-01": lat.isna() | lon.isna() | ~lat.between(49.0, 61.5) | ~lon.between(-8.5, 2.5),
+        "VR-03": parse_accident_date(df["accident_date"]).isna() | parse_accident_time(df["accident_time"]).isna(),
+        "VR-02": speed.isna() | ~speed.between(10, 100),
+        "VR-04": ~severity.isin([1, 2, 3]),
+        "VR-05": index.isna() | (index == "") | index.duplicated(keep="first") | index.isin(existing_indices),
+    }
+
+
+def validate_and_quarantine(batch_id: str = None, persist: bool = True) -> dict:
     """
-    Validates records in stg_accidents_raw.
-    Routes non-compliant records to quarantine_rejected_records table and returns valid DataFrame.
+    Validates records in stg_accidents_raw (one batch, or everything staged).
+    persist=True writes failures to quarantine_rejected_records and updates the
+    batch's audit row; persist=False only returns the split (used when the DAG has
+    already run the quality gate as its own task).
     """
     engine = get_engine()
-    
-    # Query records from staging
+
     if batch_id:
-        query = f"SELECT * FROM stg_accidents_raw WHERE batch_id = '{batch_id}'"
+        df = pd.read_sql(text("SELECT * FROM stg_accidents_raw WHERE batch_id = :b"), con=engine, params={"b": batch_id})
     else:
-        query = "SELECT * FROM stg_accidents_raw"
-        
-    df = pd.read_sql(query, con=engine)
+        df = pd.read_sql("SELECT * FROM stg_accidents_raw", con=engine)
+
     if df.empty:
         logger.warning("No records found in staging to validate.")
-        return {"total": 0, "valid": 0, "rejected": 0}
-        
+        return {"total": 0, "valid": 0, "rejected": 0, "valid_df": df, "batches": set()}
+
     total_records = len(df)
-    logger.info(f"Starting quality checks on {total_records} records...")
-    
-    valid_mask = pd.Series(True, index=df.index)
-    rejection_reasons = {}
-    
-    # Check 1: Valid Coordinates
-    coord_invalid = (
-        df["latitude"].isna() | 
-        df["longitude"].isna() | 
-        (df["latitude"] < 49.0) | (df["latitude"] > 61.5) | 
-        (df["longitude"] < -8.5) | (df["longitude"] > 2.5)
-    )
-    for idx in df[coord_invalid].index:
-        valid_mask[idx] = False
-        rejection_reasons[idx] = "INVALID_COORDINATES: Lat/Lon out of plausible geographic bounds"
-        
-    # Check 2: Missing or malformed Date/Time
-    date_invalid = df["accident_date"].isna() | (df["accident_date"].str.len() < 8)
-    for idx in df[date_invalid].index:
-        if idx not in rejection_reasons:
-            valid_mask[idx] = False
-            rejection_reasons[idx] = "MISSING_DATETIME: Accident date is null or invalid format"
-            
-    # Check 3: Valid Speed Limit
-    speed_invalid = df["speed_limit"].isna() | (df["speed_limit"] <= 0) | (df["speed_limit"] > 100)
-    for idx in df[speed_invalid].index:
-        if idx not in rejection_reasons:
-            valid_mask[idx] = False
-            rejection_reasons[idx] = "INVALID_SPEED_LIMIT: Speed limit not in range [10, 100]"
-            
-    # Check 4: Valid Severity
-    sev_invalid = df["accident_severity"].isna() | (~df["accident_severity"].astype(str).isin(["1", "2", "3", "Fatal", "Serious", "Slight"]))
-    for idx in df[sev_invalid].index:
-        if idx not in rejection_reasons:
-            valid_mask[idx] = False
-            rejection_reasons[idx] = "INVALID_SEVERITY: Severity not mapped to 1, 2, or 3"
-            
-    # Check 5: Duplicate Accident Index
-    dup_mask = df.duplicated(subset=["accident_index"], keep="first")
-    for idx in df[dup_mask].index:
-        if idx not in rejection_reasons:
-            valid_mask[idx] = False
-            rejection_reasons[idx] = "DUPLICATE_ACCIDENT_INDEX: Duplicate key collision"
-            
+    logger.info(f"Starting quality checks on {total_records:,} records...")
+
+    existing = set(pd.read_sql("SELECT accident_index FROM fact_accidents", con=engine)["accident_index"].astype(str))
+    failures = rule_failures(df, existing)
+
+    reason = pd.Series(np.nan, index=df.index, dtype=object)
+    for rule_id, message in RULES:
+        reason = reason.where(reason.notna() | ~failures[rule_id], message)
+
+    valid_mask = reason.isna()
     valid_df = df[valid_mask].copy()
     rejected_df = df[~valid_mask].copy()
-    
-    # Store rejected records into quarantine table
-    if not rejected_df.empty:
-        rejected_records_to_insert = []
-        for idx, row in rejected_df.iterrows():
-            reason = rejection_reasons.get(idx, "FAILED_GENERAL_VALIDATION")
-            raw_payload = row.to_json()
-            rejected_records_to_insert.append({
-                "batch_id": row.get("batch_id", "UNKNOWN"),
-                "source_entity": "stg_accidents_raw",
-                "record_identifier": str(row.get("accident_index", f"ROW_{idx}")),
-                "rejection_reason": reason,
-                "raw_payload": raw_payload,
-                "rejected_at": datetime.datetime.now(datetime.timezone.utc)
-            })
-            
+    breakdown = reason.dropna().value_counts().to_dict()
+
+    if persist and not rejected_df.empty:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        quarantine = pd.DataFrame({
+            "batch_id": rejected_df["batch_id"].fillna("UNKNOWN"),
+            "source_entity": "stg_accidents_raw",
+            "record_identifier": rejected_df["accident_index"].fillna("").astype(str),
+            "rejection_reason": reason[~valid_mask],
+            "raw_payload": rejected_df.apply(lambda r: r.to_json(), axis=1),
+            "rejected_at": now,
+        })
+        quarantine.to_sql("quarantine_rejected_records", con=engine, if_exists="append", index=False, chunksize=5000)
+
+        # Record rejected counts against each batch's ingestion audit row
         with engine.begin() as conn:
-            for rec in rejected_records_to_insert:
+            for b, count in rejected_df["batch_id"].value_counts().items():
                 conn.execute(
-                    text("""
-                        INSERT INTO quarantine_rejected_records 
-                        (batch_id, source_entity, record_identifier, rejection_reason, raw_payload, rejected_at)
-                        VALUES (:batch_id, :source_entity, :record_identifier, :rejection_reason, :raw_payload, :rejected_at)
-                    """),
-                    rec
+                    text("UPDATE ingestion_audit SET records_rejected = :n WHERE batch_id = :b"),
+                    {"n": int(count), "b": b},
                 )
-        
-        # Save rejection summary artifact in data/rejected/
-        rejected_dir = Path("data/rejected")
+
+        rejected_dir = DATA_DIR / "rejected"
         rejected_dir.mkdir(parents=True, exist_ok=True)
-        summary_path = rejected_dir / f"quarantine_summary_{datetime.date.today()}.json"
-        
-        summary_data = {
-            "timestamp": datetime.datetime.now().isoformat(),
-            "total_evaluated": total_records,
-            "passed_validation": len(valid_df),
-            "quarantined_count": len(rejected_df),
-            "reasons_breakdown": {
-                reason: sum(1 for r in rejection_reasons.values() if r == reason)
-                for reason in set(rejection_reasons.values())
-            }
-        }
+        summary_path = rejected_dir / f"quarantine_summary_{batch_id or 'all'}_{datetime.date.today()}.json"
         with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(summary_data, f, indent=2)
-            
-        logger.warning(f"Quarantined {len(rejected_df)} invalid records out of {total_records}. Logged to quarantine_rejected_records.")
-    else:
+            json.dump({
+                "timestamp": datetime.datetime.now().isoformat(),
+                "batch_id": batch_id,
+                "total_evaluated": total_records,
+                "passed_validation": len(valid_df),
+                "quarantined_count": len(rejected_df),
+                "reasons_breakdown": breakdown,
+            }, f, indent=2)
+
+        logger.warning(f"Quarantined {len(rejected_df):,} invalid records out of {total_records:,}. Logged to quarantine_rejected_records.")
+    elif rejected_df.empty:
         logger.info("All records passed data quality checks!")
-        
+
     return {
         "total": total_records,
         "valid": len(valid_df),
         "rejected": len(rejected_df),
-        "valid_df": valid_df
+        "reasons": breakdown,
+        "valid_df": valid_df,
+        "batches": set(df["batch_id"].dropna()),
     }
 
 

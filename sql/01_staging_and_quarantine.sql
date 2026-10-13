@@ -36,8 +36,9 @@ CREATE TABLE IF NOT EXISTS stg_accidents_raw (
 );
 
 -- Raw staging table for Open-Meteo weather records
+-- latitude/longitude are the weather grid cell, weather_timestamp is the local UK hour (ISO, minutes zeroed)
 CREATE TABLE IF NOT EXISTS stg_weather_raw (
-    weather_timestamp TIMESTAMP WITH TIME ZONE,
+    weather_timestamp VARCHAR(16),
     latitude NUMERIC(10, 6),
     longitude NUMERIC(10, 6),
     temperature_2m NUMERIC(5, 2),
@@ -61,5 +62,22 @@ CREATE TABLE IF NOT EXISTS quarantine_rejected_records (
     rejected_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Every prediction served by the API, for monitoring latency, class mix and
+-- (once the true severity is known via accident_index) false-negative rates
+CREATE TABLE IF NOT EXISTS prediction_log (
+    prediction_id SERIAL PRIMARY KEY,
+    accident_index VARCHAR(64),
+    request_payload TEXT,
+    predicted_severity_code INT,
+    p_fatal NUMERIC(9, 4),
+    p_serious NUMERIC(9, 4),
+    p_slight NUMERIC(9, 4),
+    model_version VARCHAR(64),
+    latency_ms NUMERIC(9, 4),
+    predicted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_stg_accidents_batch ON stg_accidents_raw(batch_id);
+CREATE INDEX IF NOT EXISTS idx_stg_weather_key ON stg_weather_raw(latitude, longitude, weather_timestamp);
+CREATE INDEX IF NOT EXISTS idx_prediction_log_index ON prediction_log(accident_index);
 CREATE INDEX IF NOT EXISTS idx_quarantine_batch ON quarantine_rejected_records(batch_id);

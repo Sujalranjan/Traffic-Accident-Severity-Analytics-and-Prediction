@@ -23,8 +23,8 @@ CREATE TABLE IF NOT EXISTS dim_location (
     latitude NUMERIC(10, 6) NOT NULL,
     longitude NUMERIC(10, 6) NOT NULL,
     urban_or_rural VARCHAR(32),
-    local_authority VARCHAR(128),
-    region VARCHAR(64),
+    local_authority VARCHAR(128),          -- ONS local authority district code
+    region VARCHAR(64),                    -- nation derived from the ONS district code
     UNIQUE (latitude, longitude, urban_or_rural, local_authority)
 );
 
@@ -39,14 +39,23 @@ CREATE TABLE IF NOT EXISTS dim_road (
 );
 
 -- Dim Weather
+-- Grain: one Open-Meteo hourly observation for a weather grid cell, combined with the
+-- police-reported DfT weather condition. weather_nk is the natural key used for upserts.
 CREATE TABLE IF NOT EXISTS dim_weather (
     weather_key SERIAL PRIMARY KEY,
-    weather_condition VARCHAR(128) NOT NULL UNIQUE,
+    weather_nk VARCHAR(160) NOT NULL UNIQUE,
+    grid_latitude NUMERIC(9, 4),
+    grid_longitude NUMERIC(9, 4),
+    observed_hour VARCHAR(16),             -- local UK hour, ISO format
+    weather_condition VARCHAR(128) NOT NULL,   -- DfT police-reported condition
+    weather_description VARCHAR(128),      -- Open-Meteo WMO weather code description
+    weather_code INT,
     temperature_c NUMERIC(5, 2),
     precipitation_mm NUMERIC(5, 2),
     visibility_m NUMERIC(8, 2),
     wind_speed_kmh NUMERIC(5, 2),
-    weather_risk_level VARCHAR(32)         -- 'Low', 'Moderate', 'Severe'
+    weather_risk_level VARCHAR(32),        -- 'Low', 'Moderate', 'Severe'
+    weather_source VARCHAR(32)             -- 'Open-Meteo' or 'Unavailable'
 );
 
 -- Dim Severity
