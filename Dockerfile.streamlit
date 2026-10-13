@@ -17,7 +17,7 @@ COPY streamlit_app/ /app/streamlit_app/
 COPY models/ /app/models/
 COPY sql/ /app/sql/
 COPY reports/ /app/reports/
-COPY .env* /app/
+# Credentials come from compose environment variables, never baked into the image
 
 ENV PYTHONPATH=/app
 EXPOSE 8501

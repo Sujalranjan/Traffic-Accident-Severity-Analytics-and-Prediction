@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ /app/src/
 COPY models/ /app/models/
 COPY sql/ /app/sql/
-COPY .env* /app/
+# Credentials come from compose environment variables, never baked into the image
 
 ENV PYTHONPATH=/app
 EXPOSE 8000
