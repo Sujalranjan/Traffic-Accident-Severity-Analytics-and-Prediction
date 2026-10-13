@@ -1,81 +1,105 @@
 # Execution Evidence & Pipeline Demonstration
 
-This document provides verified terminal logs, test logs, and database evidence demonstrating successful end-to-end execution of the Traffic Accident Severity Analytics and MLOps Pipeline.
+End-to-end run on the real UK DfT collision file (`dft-road-casualty-statistics-collision-last-5-years.csv`, 513,801 collisions, 2021–2025) on 13 Oct 2026, local mode (SQLite warehouse, local MLflow with SQLite backend). Log lines are copied from the run; timestamps are local time.
+
+> Screenshots of the Airflow DAG graph, MLflow runs/registry, FastAPI `/docs` and each dashboard page should be added to `docs/screenshots/` after running `docker compose up --build`.
 
 ---
 
-## 1. Automated Test Suite Execution (PyTest)
-All 5 unit and integration tests passed with 100% compliance:
-
+## 1. Accident Ingestion (DfT CSV → raw landing zone → staging)
 ```text
-============================= test session starts =============================
-platform win32 -- Python 3.13.9, pytest-8.4.2, pluggy-1.6.0
-rootdir: D:\College\mlops
-collected 5 items
-
-tests/test_pipeline.py::test_database_init PASSED                        [ 20%]
-tests/test_pipeline.py::test_data_validation_and_quarantine PASSED       [ 40%]
-tests/test_pipeline.py::test_model_pipeline_predict PASSED               [ 60%]
-tests/test_pipeline.py::test_api_health_endpoint PASSED                  [ 80%]
-tests/test_pipeline.py::test_api_prediction_endpoint PASSED              [100%]
-
-======================= 5 passed in 13.06s =======================
+accident_ingest - INFO - 513,801 collisions in source file; 513,801 new collisions selected for batch_acc_38611701.
+accident_ingest - INFO - Saved raw landing file to: data\raw\accidents_raw_batch_acc_38611701.csv
+accident_ingest - INFO - Ingestion batch batch_acc_38611701 logged to audit (513,801 records).
 ```
+Every data row in the file was staged (the header is read by name, no row is skipped). Wall time: 29 s.
 
 ---
 
-## 2. Ingestion & Raw Landing Zone Evidence
+## 2. Weather Ingestion (Open-Meteo Historical API)
 ```text
-2026-09-11 16:55:23,229 - accident_ingest - INFO - Generating benchmark accident dataset (batch: batch_acc_35cc938b)...
-2026-09-11 16:55:23,277 - accident_ingest - INFO - Saved raw landing file to: data\raw\accidents_raw_batch_acc_35cc938b.csv (2500 records)
-2026-09-11 16:55:27,858 - db_manager - INFO - Applying schema: 01_staging_and_quarantine.sql
-2026-09-11 16:55:27,892 - db_manager - INFO - Applying schema: 02_star_schema.sql
-2026-09-11 16:55:27,937 - db_manager - INFO - Database schemas successfully initialized.
-2026-09-11 16:55:27,993 - accident_ingest - INFO - Ingestion batch batch_acc_35cc938b logged to audit successfully.
+weather_ingest - INFO - 328,038 accident hours need weather across 62 grid cells (1.0 deg); 293 API requests planned.
+weather_ingest - INFO - Weather batch batch_wea_1ee69c50: SUCCESS, 328,038 hourly readings staged, 0 failed requests.
 ```
+293 requests (one per grid cell and year), full responses kept in `data/raw/weather_raw_batch_wea_1ee69c50.jsonl.gz`. Wall time: about 7 minutes.
 
 ---
 
-## 3. Atmospheric Weather Ingestion (Open-Meteo API)
+## 3. Validation, Quarantine & Star Schema Load
 ```text
-2026-09-11 16:56:11,447 - weather_ingest - INFO - Saved raw weather data to: data\raw\weather_raw_batch_wea_3569976b.json (720 hourly readings)
-2026-09-11 16:56:11,474 - weather_ingest - INFO - Weather batch batch_wea_3569976b successfully loaded and audited.
+data_validation - INFO - Starting quality checks on 513,801 records...
+data_validation - WARNING - Quarantined 56 invalid records out of 513,801. Logged to quarantine_rejected_records.
+etl_transform - INFO - Transforming 513,745 validated accident records...
+etl_transform - INFO - Weather matched for 513,745 of 513,745 accidents (100.0%).
+etl_transform - INFO - Loaded 513,745 new facts (fact_accidents now holds 513,745 rows).
+etl_transform - INFO - Staging cleared for batch(es): batch_acc_38611701
+etl_transform - INFO - ETL transformation, star schema load, and analytical marts refresh complete!
 ```
+Wall time: 45 s.
+
+| Quarantine reason | Rows |
+| :--- | ---: |
+| `INVALID_COORDINATES` (blank or outside UK bounds) | 53 |
+| `INVALID_SPEED_LIMIT` (DfT `-1` = missing) | 3 |
+
+### Populated tables after the run
+| Table | Rows |
+| :--- | ---: |
+| `fact_accidents` | 513,745 |
+| `dim_date` (hour grain) | 42,170 |
+| `dim_location` | 512,323 |
+| `dim_road` | 782 |
+| `dim_weather` | 385,740 |
+| `dim_severity` | 3 |
+| `agg_hourly_severity_mart` | 504 |
+| `agg_weather_road_risk_mart` | 3,365 |
+| `agg_location_hotspots_mart` | 318,017 |
+| `stg_weather_raw` | 328,038 |
+| `stg_accidents_raw` (cleared after load) | 0 |
+| `quarantine_rejected_records` | 56 |
+
+### `ingestion_audit`
+| Source | Status | Ingested | Rejected |
+| :--- | :--- | ---: | ---: |
+| UK DfT Road Safety Data (STATS19 collisions) | SUCCESS | 513,801 | 56 |
+| Open-Meteo Historical Weather API | SUCCESS | 328,038 | 0 |
+
+Re-running ingestion and the ETL afterwards selects 0 new collisions and leaves every table unchanged (covered by `test_pipeline_rerun_is_idempotent`).
 
 ---
 
-## 4. Data Quality Validation & Quarantine Execution
+## 4. Model Training, MLflow Tracking & Registry
 ```text
-2026-09-11 16:56:32,908 - data_validation - INFO - Starting quality checks on 2500 records...
-2026-09-11 16:56:32,939 - data_validation - WARNING - Quarantined 37 invalid records out of 2500. Logged to quarantine_rejected_records.
-2026-09-11 16:56:32,940 - etl_transform - INFO - Transforming 2463 validated accident records...
-2026-09-11 16:56:34,127 - etl_transform - INFO - ETL transformation, star schema load, and analytical marts refresh complete!
+feature_engineering - INFO - Chronological split - Train: 359621, Val: 77062, Test: 77062
+model_training - INFO - Applied SMOTE: Resampled training set from 359621 to 825330 records.
+model_training - INFO - Calculated class weights: {0: 0.436, 1: 1.513, 2: 22.622}
+model_training - INFO - RandomForest Results - Overall Accuracy: 0.5971, Macro F1: 0.3650, Fatal Recall: 0.4675, ROC-AUC: 0.6392
+model_training - INFO - LightGBM Results - Overall Accuracy: 0.7010, Macro F1: 0.3717, Fatal Recall: 0.1558, ROC-AUC: 0.6479
+model_training - INFO - XGBoost Results - Overall Accuracy: 0.6832, Macro F1: 0.3714, Fatal Recall: 0.1861, ROC-AUC: 0.6480
+model_training - INFO - === Best Model Selected: LightGBM with Val Macro-F1: 0.3717 ===
+Successfully registered model 'accident-severity-classifier'.
+model_training - INFO - Registered accident-severity-classifier version 1 with alias 'champion'.
+model_training - INFO - Test results - Macro F1: 0.3689, Fatal recall: 0.1885, Serious recall: 0.1522
 ```
+Artifacts: `models/accident_severity_model.joblib` (0.8 MB), `models/model_metadata.json`, `models/test_evaluation_report.json`, validation confusion matrices `models/cm_*.png`, test confusion matrix `models/cm_test_champion.png`. Wall time: about 70 s.
 
 ---
 
-## 5. MLOps Multi-Model Training & MLflow Tracking
+## 5. Monitoring & Retraining Decision
 ```text
-2026-09-11 16:57:51,960 - feature_engineering - INFO - Loaded 2463 records from warehouse for feature engineering.
-2026-09-11 16:57:51,990 - feature_engineering - INFO - Chronological split - Train: 1724, Val: 369, Test: 370
-2026-09-11 16:57:51,990 - model_training - INFO - Fitting preprocessor on chronological training split...
-2026-09-11 16:57:52,020 - model_training - INFO - Calculated class weights: {0: 0.418, 1: 1.836, 2: 15.123}
-2026-09-11 16:57:52,020 - model_training - INFO - --- Training RandomForest ---
-2026-09-11 16:57:53,312 - model_training - INFO - RandomForest Results - Macro F1: 0.2973, Fatal Recall: 0.0000, ROC-AUC: 0.5232
-2026-09-11 16:57:54,112 - model_training - INFO - --- Training LightGBM ---
-2026-09-11 16:58:00,274 - model_training - INFO - LightGBM Results - Macro F1: 0.3138, Fatal Recall: 0.0000, ROC-AUC: 0.4725
-2026-09-11 16:58:00,483 - model_training - INFO - --- Training XGBoost ---
-2026-09-11 16:58:00,931 - model_training - INFO - XGBoost Results - Macro F1: 0.3175, Fatal Recall: 0.0000, ROC-AUC: 0.5019
-2026-09-11 16:58:01,111 - model_training - INFO - === Best Model Selected: XGBoost with Val Macro-F1: 0.3175 ===
-2026-09-11 16:58:26,858 - model_training - INFO - Saved complete inference pipeline to: models\accident_severity_model.joblib
-2026-09-11 16:58:26,859 - model_training - INFO - Saved test evaluation report to: models\test_evaluation_report.json
+drift_monitoring - INFO - Analyzing drift - Reference: 359621 records, Current: 154124 records
+drift_monitoring - INFO - Drift evaluation report written to: reports\drift_report_2026-10-13.json
+drift_monitoring - INFO - Retraining Trigger Status: TRIGGERED
 ```
+Reference window 2021-01-01 to 2024-06-27, current window 2024-06-27 to 2025-12-31. Feature PSI all below 0.03 (stable). Location KS 0.017 (statistically significant on 500k rows but far below the 0.15 practical threshold). Severity mix: Serious 22.0% → 24.4% (chi-square p < 0.01), which fired the retraining trigger. Champion backtest on the current window: macro-F1 0.370, Fatal FNR 0.828, Serious FNR 0.850 (within 0.10 of the test baseline).
 
 ---
 
-## 6. Drift Monitoring & Retraining Execution
+## 6. Automated Tests
 ```text
-2026-09-11 16:58:53,682 - drift_monitoring - INFO - Analyzing drift - Reference: 1724 records, Current: 739 records
-2026-09-11 16:58:53,701 - drift_monitoring - INFO - Drift evaluation report written to: reports\drift_report_2026-09-11.json
-2026-09-11 16:58:53,701 - drift_monitoring - INFO - Retraining Trigger Status: OK (STABLE)
+13 passed in 4.18s
 ```
+Tests run against a temporary SQLite warehouse and a DfT-format fixture (`tests/conftest.py`), covering day-first date parsing, code decoding, weather join keys, ingestion row counts, quarantine rules, idempotent re-runs, mart refresh, the DAG call signature, model prediction, `/health`, `/predict` with prediction logging, and `/metrics` counters.
+
+## 7. Dashboard Smoke Test
+All seven Streamlit pages (`app.py` and `pages/1`–`6`) were executed headlessly with `streamlit.testing.v1.AppTest` against the populated warehouse: no exceptions, live data (not demo mode).
