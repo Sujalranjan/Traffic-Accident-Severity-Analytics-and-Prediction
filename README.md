@@ -98,6 +98,7 @@ traffic-accident-mlops/
 ├── Dockerfile.api                 # Container build for FastAPI
 ├── Dockerfile.streamlit           # Container build for Streamlit
 ├── requirements.txt               # Python package dependencies
+├── packages.txt                   # System packages for Streamlit Cloud (libgomp1 for LightGBM)
 ├── .env.example                   # Environment configuration template
 └── README.md
 ```

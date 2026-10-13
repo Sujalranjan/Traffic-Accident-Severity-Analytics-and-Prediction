@@ -154,7 +154,7 @@ One row per prediction served by the FastAPI service.
 | `request_payload` | TEXT | Full JSON request |
 | `predicted_severity_code` | INT | 1 Fatal, 2 Serious, 3 Slight |
 | `p_fatal`, `p_serious`, `p_slight` | NUMERIC(9,4) | Class probabilities |
-| `model_version` | VARCHAR(64) | Registered MLflow model version, e.g. `accident-severity-classifier/v1` |
+| `model_version` | VARCHAR(64) | Registered MLflow model version, e.g. `accident-severity-classifier/v2` |
 | `latency_ms` | NUMERIC(9,4) | Inference latency |
 | `predicted_at` | TIMESTAMP | Prediction timestamp |
 

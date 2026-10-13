@@ -179,7 +179,7 @@ Validation results (selection metric: macro-F1):
 
 | Model | Accuracy | Macro-F1 | Fatal recall | ROC-AUC (OvR) |
 | :--- | ---: | ---: | ---: | ---: |
-| Random Forest (150 trees, depth 12, min leaf 20, 30% bootstrap) | 0.597 | 0.365 | **0.468** | 0.639 |
+| Random Forest (150 trees, depth 12, min leaf 20, 30% bootstrap) | 0.597 | 0.365 | **0.467** | 0.639 |
 | **LightGBM** (180 trees, depth 7, lr 0.04) – champion | **0.701** | **0.372** | 0.156 | 0.648 |
 | XGBoost (160 trees, depth 6, lr 0.05) | 0.683 | 0.371 | 0.186 | 0.648 |
 
@@ -196,14 +196,14 @@ Accuracy 0.677, ROC-AUC 0.639, Fatal FNR 0.812, Serious FNR 0.848. The test conf
 
 **Interpretation.** The model clearly learns real signal: ROC-AUC 0.64 is well above chance, and it finds 18.8% of fatal collisions while predicting Fatal for only a small share of cases (precision 5.6%, about 4× the 1.47% base rate). Its most-used features are speed limit, precipitation, hour (sin/cos), vehicles and casualties, and single-carriageway roads, which matches the analysis in section 8. Severity is still only partly predictable from STATS19 collision-level fields, so recall on the minority classes stays low.
 
-**Trade-off.** On validation, Random Forest caught 3× more fatal collisions than LightGBM (46.8% vs 15.6% recall) at lower overall accuracy. Selecting by macro-F1 favours LightGBM. For an emergency-dispatch use case that prioritises missed fatalities, Random Forest or a lowered Fatal decision threshold would be the better operating point. This is a deployment decision recorded here rather than hidden in the metric.
+**Trade-off.** On validation, Random Forest caught 3× more fatal collisions than LightGBM (46.7% vs 15.6% recall) at lower overall accuracy. Selecting by macro-F1 favours LightGBM. For an emergency-dispatch use case that prioritises missed fatalities, Random Forest or a lowered Fatal decision threshold would be the better operating point. This is a deployment decision recorded here rather than hidden in the metric.
 
 ---
 
 ## 11. MLflow Tracking, Registry and Packaging
 
 - **Tracking** (`src/ml/train.py`): every candidate run logs parameters, accuracy, macro/weighted F1, Fatal and Serious recall, ROC-AUC and a validation confusion matrix. The champion run adds test metrics, the Fatal/Serious FNR and the test confusion matrix. When no server is running, MLflow uses a local SQLite backend (`mlflow.db`, artifacts in `mlruns/`); in Docker it uses the MLflow server.
-- **Registry**: the champion is registered as **`accident-severity-classifier` version 1** with the alias **`champion`**. Each retrain creates a new version and moves the alias, which gives a versioned history with rollback.
+- **Registry**: the champion is registered as **`accident-severity-classifier` version 2** with the alias **`champion`** (version 1 was the same LightGBM model saved with scikit-learn 1.6; version 2 re-saves it with 1.7.2 so it loads on Python 3.10–3.14, with identical metrics). Each retrain creates a new version and moves the alias, which gives a versioned history with rollback.
 - **Packaging**: preprocessing and classifier form one scikit-learn `Pipeline`, saved compressed as `models/accident_severity_model.joblib` (0.8 MB). `models/model_metadata.json` records the registered version, run ID, features and the **baseline test metrics** that monitoring compares against.
 
 ---

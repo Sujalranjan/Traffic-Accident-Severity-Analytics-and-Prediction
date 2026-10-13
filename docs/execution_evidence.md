@@ -79,6 +79,8 @@ model_training - INFO - XGBoost Results - Overall Accuracy: 0.6832, Macro F1: 0.
 model_training - INFO - === Best Model Selected: LightGBM with Val Macro-F1: 0.3717 ===
 Successfully registered model 'accident-severity-classifier'.
 model_training - INFO - Registered accident-severity-classifier version 1 with alias 'champion'.
+# 14 Oct: retrained with scikit-learn 1.7.2 (needed for Python 3.14 on Streamlit Cloud): identical LightGBM
+# validation/test metrics, registered as version 2 with alias 'champion'.
 model_training - INFO - Test results - Macro F1: 0.3689, Fatal recall: 0.1885, Serious recall: 0.1522
 ```
 Artifacts: `models/accident_severity_model.joblib` (0.8 MB), `models/model_metadata.json`, `models/test_evaluation_report.json`, validation confusion matrices `models/cm_*.png`, test confusion matrix `models/cm_test_champion.png`. Wall time: about 70 s.
@@ -107,7 +109,7 @@ All seven Streamlit pages (`app.py` and `pages/1`–`6`) were executed headlessl
 ---
 
 ## 8. Docker Compose & Airflow Verification (PostGIS warehouse)
-Stack: `postgis/postgis:15-3.4`, `ghcr.io/mlflow/mlflow:v3.4.0`, custom `traffic-airflow:2.8.1` (Dockerfile.airflow), FastAPI and Streamlit images. All services healthy: Airflow `/health` healthy, FastAPI `/health` serving `accident-severity-classifier/v1`, Streamlit `/_stcore/health` ok, MLflow UI 200.
+Stack: `postgis/postgis:15-3.4`, `ghcr.io/mlflow/mlflow:v3.4.0`, custom `traffic-airflow:2.8.1` (Dockerfile.airflow), FastAPI and Streamlit images. All services healthy: Airflow `/health` healthy, FastAPI `/health` serving `accident-severity-classifier/v2`, Streamlit `/_stcore/health` ok, MLflow UI 200.
 
 DAG `accident_severity_pipeline`, run `manual__2026-10-13T20:33:21`: all 9 tasks succeeded in 3 min 27 s.
 
@@ -119,6 +121,6 @@ DAG `accident_severity_pipeline`, run `manual__2026-10-13T20:33:21`: all 9 tasks
 
 PostGIS warehouse after the runs: 513,745 facts, 385,740 weather observations (100% from Open-Meteo), 512,323 locations with PostGIS geometry, marts rebuilt.
 
-Retrained champion in Docker (same 359,621-row training split): XGBoost, test macro-F1 0.373, ROC-AUC 0.642, Fatal recall 0.242, Serious recall 0.182. LightGBM and XGBoost are within 0.001 macro-F1 on validation, so either can win a given run. The committed artifact in `models/` is the local LightGBM v1 described above.
+Retrained champion in Docker (same 359,621-row training split): XGBoost, test macro-F1 0.373, ROC-AUC 0.642, Fatal recall 0.242, Serious recall 0.182. LightGBM and XGBoost are within 0.001 macro-F1 on validation, so either can win a given run. The committed artifact in `models/` is the local LightGBM champion described above (local registry version 2, re-saved with scikit-learn 1.7.2).
 
 Recovery behaviour observed: two earlier overlapping runs (before `max_active_runs=1`) had staged the file twice. The fixed pipeline processed everything left in staging, loaded each collision once, and quarantined the second copy as `DUPLICATE_ACCIDENT_INDEX`.

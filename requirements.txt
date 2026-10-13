@@ -15,8 +15,8 @@ pydeck>=0.8,<1
 matplotlib>=3.7,<4
 
 # Machine Learning & MLOps
-# scikit-learn is pinned to the minor version the committed model was trained with
-scikit-learn>=1.6,<1.7
+# scikit-learn is pinned to the minor version the committed model was saved with (1.7 has wheels for Python 3.10-3.14)
+scikit-learn>=1.7.2,<1.8
 xgboost>=2.0,<4
 lightgbm>=4.1,<5
 imbalanced-learn>=0.12,<0.15
