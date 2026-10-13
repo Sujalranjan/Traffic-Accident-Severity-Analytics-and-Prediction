@@ -94,6 +94,7 @@ traffic-accident-mlops/
 │   ├── rejected/                  # Quarantine summaries
 │   └── traffic_accidents.db       # Local SQLite warehouse (PostgreSQL fallback)
 ├── docker-compose.yml             # Multi-service container orchestration
+├── Dockerfile.airflow             # Airflow image with pipeline dependencies
 ├── Dockerfile.api                 # Container build for FastAPI
 ├── Dockerfile.streamlit           # Container build for Streamlit
 ├── requirements.txt               # Python package dependencies
@@ -156,7 +157,7 @@ docker compose up --build
 - **MLflow Tracking Server & Registry**: [http://localhost:5000](http://localhost:5000)
 - **Airflow Webserver** (admin / admin): [http://localhost:8080](http://localhost:8080)
 
-The Airflow containers mount `datasets/`, `data/`, `models/` and `reports/`, write to the PostGIS warehouse and log to the MLflow server.
+The Airflow services use a custom image (`Dockerfile.airflow`) with the pipeline's packages pre-installed, mount `datasets/`, `data/`, `models/` and `reports/`, write to the PostGIS warehouse and log to the MLflow server. Unpause `accident_severity_pipeline` in the Airflow UI and trigger it; only one run executes at a time.
 
 ---
 

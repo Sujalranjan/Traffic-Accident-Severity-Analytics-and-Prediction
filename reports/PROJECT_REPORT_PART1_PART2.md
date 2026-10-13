@@ -137,7 +137,7 @@ check_db_readiness → ingest_raw_accidents → ingest_weather_api → validate_
    → retraining_required (ShortCircuit) → retrain_and_register_model
 ```
 
-Batch IDs travel between tasks through XCom. Validation runs once as its own visible quality-gate task. The last two tasks implement automatic retraining: the monitoring task pushes its decision to XCom, and the short-circuit skips retraining unless a trigger fired. In Docker Compose, the Airflow services write to the PostGIS warehouse (`DATABASE_URL`), log to the MLflow server, and mount `datasets/`, `data/`, `models/` and `reports/`.
+Batch IDs travel between tasks through XCom, and the downstream tasks process everything still waiting in staging, so rows left by a failed run are picked up by the next one. `max_active_runs=1` stops overlapping runs. In the Docker verification run all nine tasks succeeded on PostGIS: the class-shift trigger fired, and the DAG retrained and registered version 2 (XGBoost, test macro-F1 0.373, ROC-AUC 0.642, Fatal recall 0.242) and moved the `champion` alias to it. Validation runs once as its own visible quality-gate task. The last two tasks implement automatic retraining: the monitoring task pushes its decision to XCom, and the short-circuit skips retraining unless a trigger fired. In Docker Compose, the Airflow services write to the PostGIS warehouse (`DATABASE_URL`), log to the MLflow server, and mount `datasets/`, `data/`, `models/` and `reports/`.
 
 ---
 
@@ -215,7 +215,7 @@ Accuracy 0.677, ROC-AUC 0.639, Fatal FNR 0.812, Serious FNR 0.848. The test conf
 - `POST /predict` and `POST /predict/batch`: Pydantic validation (hour 0–23, UK coordinates, speed 10–100, DfT labels). Returns the predicted class, probabilities, a risk score (0.1·P(slight) + 0.5·P(serious) + 1.0·P(fatal)) and the model version. Every prediction is written to `prediction_log` with an optional `accident_index`.
 - `GET /metrics`: Prometheus text with successful requests, **failed requests**, prediction-log failures, predictions per class, average latency and the served model version.
 
-**Containers** (`docker-compose.yml`): `postgis/postgis:15-3.4` (warehouse and Airflow metadata DB, initialised by `sql/00_init.sql` … `04_postgis.sql`), `mlflow` v3.4 (SQLite backend, served artifacts), `airflow-init` / `webserver` / `scheduler` (LocalExecutor), `fastapi` and `streamlit` (built from `python:3.10-slim`). Credentials come from environment variables (`.env.example`) and are never copied into images.
+**Containers** (`docker-compose.yml`): `postgis/postgis:15-3.4` (warehouse and Airflow metadata DB, initialised by `sql/00_init.sql` … `04_postgis.sql`), `mlflow` v3.4 (SQLite backend, served artifacts), `airflow-init` / `webserver` / `scheduler` (LocalExecutor, custom image from `Dockerfile.airflow` with the pipeline's ML packages and the OpenMP runtime baked in; one active DAG run at a time), `fastapi` and `streamlit` (built from `python:3.10-slim`). Credentials come from environment variables (`.env.example`) and are never copied into images.
 
 ---
 
@@ -256,4 +256,4 @@ Retraining triggers, all implemented in code:
 - **Operating point**: tune the Fatal/Serious decision thresholds (or cost-weighted selection) to the users' tolerance for missed severe collisions.
 - **Leakage check**: `number_of_casualties` is only known after a collision. It is kept for analytical scoring and should be dropped for a pre-incident risk use case.
 - **Weather resolution**: a 1.0° grid fits the free API tier for a full backfill. Daily incremental batches allow a finer 0.25–0.5° grid, and visibility is unavailable from the archive API.
-- **Deployment hardening**: bake Airflow dependencies into a custom image instead of `_PIP_ADDITIONAL_REQUIREMENTS`, add a promotion gate that compares challenger and champion on the same window, and add screenshots of the Compose stack to `docs/execution_evidence.md`.
+- **Deployment hardening**: add a promotion gate that compares challenger and champion on the same time window before moving the `champion` alias.

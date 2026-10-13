@@ -97,9 +97,28 @@ Reference window 2021-01-01 to 2024-06-27, current window 2024-06-27 to 2025-12-
 
 ## 6. Automated Tests
 ```text
-13 passed in 4.18s
+14 passed
 ```
 Tests run against a temporary SQLite warehouse and a DfT-format fixture (`tests/conftest.py`), covering day-first date parsing, code decoding, weather join keys, ingestion row counts, quarantine rules, idempotent re-runs, mart refresh, the DAG call signature, model prediction, `/health`, `/predict` with prediction logging, and `/metrics` counters.
 
 ## 7. Dashboard Smoke Test
 All seven Streamlit pages (`app.py` and `pages/1`–`6`) were executed headlessly with `streamlit.testing.v1.AppTest` against the populated warehouse: no exceptions, live data (not demo mode).
+
+---
+
+## 8. Docker Compose & Airflow Verification (PostGIS warehouse)
+Stack: `postgis/postgis:15-3.4`, `ghcr.io/mlflow/mlflow:v3.4.0`, custom `traffic-airflow:2.8.1` (Dockerfile.airflow), FastAPI and Streamlit images. All services healthy: Airflow `/health` healthy, FastAPI `/health` serving `accident-severity-classifier/v1`, Streamlit `/_stcore/health` ok, MLflow UI 200.
+
+DAG `accident_severity_pipeline`, run `manual__2026-10-13T20:33:21`: all 9 tasks succeeded in 3 min 27 s.
+
+| Task | State |
+| :--- | :--- |
+| check_db_readiness → ingest_raw_accidents → ingest_weather_api → validate_and_quarantine → transform_star_schema → refresh_data_marts → drift_and_retrain_check | success |
+| retraining_required (class-mix shift detected) | success |
+| retrain_and_register_model | success: XGBoost registered as `accident-severity-classifier` **v2**, alias `champion` moved from v1 |
+
+PostGIS warehouse after the runs: 513,745 facts, 385,740 weather observations (100% from Open-Meteo), 512,323 locations with PostGIS geometry, marts rebuilt.
+
+Retrained champion in Docker (same 359,621-row training split): XGBoost, test macro-F1 0.373, ROC-AUC 0.642, Fatal recall 0.242, Serious recall 0.182. LightGBM and XGBoost are within 0.001 macro-F1 on validation, so either can win a given run. The committed artifact in `models/` is the local LightGBM v1 described above.
+
+Recovery behaviour observed: two earlier overlapping runs (before `max_active_runs=1`) had staged the file twice. The fixed pipeline processed everything left in staging, loaded each collision once, and quarantined the second copy as `DUPLICATE_ACCIDENT_INDEX`.
