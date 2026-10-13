@@ -7,6 +7,11 @@ from pydantic import BaseModel, Field
 
 
 class AccidentFeatureInput(BaseModel):
+    """Feature values use the decoded DfT labels stored in the warehouse (see src/etl/standardize.py)."""
+    accident_index: Optional[str] = Field(
+        default=None, example="2024010012345",
+        description="Optional DfT collision index; lets monitoring compare the prediction with the recorded severity",
+    )
     hour: int = Field(..., ge=0, le=23, example=17, description="Hour of day (0-23)")
     day_name: str = Field(default="Friday", example="Friday", description="Day of week name")
     time_of_day: str = Field(default="Evening Rush", example="Evening Rush")

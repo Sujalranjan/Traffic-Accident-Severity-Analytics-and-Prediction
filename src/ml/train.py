@@ -34,10 +34,13 @@ import lightgbm as lgb
 import mlflow
 import mlflow.sklearn
 
+from src.etl.db import PROJECT_ROOT
 from src.ml.features import (
     load_dataset_from_warehouse,
     build_preprocessor_pipeline,
-    get_chronological_splits
+    get_chronological_splits,
+    NUMERIC_FEATURES,
+    CATEGORICAL_FEATURES,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -45,7 +48,10 @@ logger = logging.getLogger("model_training")
 
 MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "traffic-accident-severity-prediction")
-MODEL_DIR = Path("models")
+REGISTERED_MODEL_NAME = os.getenv("MLFLOW_REGISTERED_MODEL", "accident-severity-classifier")
+CHAMPION_ALIAS = "champion"
+MLFLOW_LOCAL_DIR = Path(os.getenv("MLFLOW_LOCAL_DIR", str(PROJECT_ROOT)))
+MODEL_DIR = Path(os.getenv("MODEL_DIR", str(PROJECT_ROOT / "models")))
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -74,10 +80,13 @@ def plot_and_save_confusion_matrix(cm, classes, output_path: str):
 
 
 def setup_mlflow():
-    """Initializes MLflow tracking, falling back gracefully to local directory."""
+    """
+    Initializes MLflow tracking. Uses the MLflow server when it is reachable, otherwise a
+    local SQLite backend (mlflow.db) with artifacts in mlruns/. A database backend is
+    required for the Model Registry.
+    """
     import socket
-    local_tracking = str(Path("mlruns").resolve())
-    
+
     server_online = False
     if MLFLOW_URI.startswith("http"):
         try:
@@ -93,10 +102,40 @@ def setup_mlflow():
         mlflow.set_tracking_uri(MLFLOW_URI)
         logger.info(f"Connected to MLflow Tracking Server at: {MLFLOW_URI}")
     else:
-        mlflow.set_tracking_uri(f"file:///{local_tracking}")
-        logger.info(f"MLflow remote server offline. Tracking experiments locally at: {local_tracking}")
-        
+        db_path = (MLFLOW_LOCAL_DIR / "mlflow.db").resolve().as_posix()
+        mlflow.set_tracking_uri(f"sqlite:///{db_path}")
+        logger.info(f"MLflow server offline. Tracking locally in {db_path} (artifacts in mlruns/).")
+        if mlflow.get_experiment_by_name(EXPERIMENT_NAME) is None:
+            mlflow.create_experiment(EXPERIMENT_NAME, artifact_location=(MLFLOW_LOCAL_DIR / "mlruns").resolve().as_uri())
+
     mlflow.set_experiment(EXPERIMENT_NAME)
+
+
+def log_and_register_model(pipeline):
+    """Logs the inference pipeline, registers a new version and points the champion alias at it."""
+    from mlflow.tracking import MlflowClient
+    try:
+        mlflow.sklearn.log_model(pipeline, name="model", registered_model_name=REGISTERED_MODEL_NAME,
+                                 serialization_format="cloudpickle")
+    except TypeError:
+        # MLflow 2.x uses artifact_path instead of name
+        mlflow.sklearn.log_model(pipeline, artifact_path="model", registered_model_name=REGISTERED_MODEL_NAME,
+                                 serialization_format="cloudpickle")
+    client = MlflowClient()
+    versions = client.search_model_versions(f"name='{REGISTERED_MODEL_NAME}'")
+    version = max(int(v.version) for v in versions)
+    client.set_registered_model_alias(REGISTERED_MODEL_NAME, CHAMPION_ALIAS, str(version))
+    logger.info(f"Registered {REGISTERED_MODEL_NAME} version {version} with alias '{CHAMPION_ALIAS}'.")
+    return version
+
+
+def false_negative_rate(y_true, y_pred, cls: int) -> float:
+    """FN / (FN + TP) for one class; 0.0 when the class is absent."""
+    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
+    positives = np.sum(y_true == cls)
+    if positives == 0:
+        return 0.0
+    return float(np.sum((y_true == cls) & (y_pred != cls)) / positives)
 
 
 def train_and_evaluate_models():
@@ -226,7 +265,7 @@ def train_and_evaluate_models():
             logger.info(f"{name} Results - Overall Accuracy: {val_accuracy:.4f}, Macro F1: {macro_f1:.4f}, Fatal Recall: {fatal_recall:.4f}, ROC-AUC: {roc_auc:.4f}")
             
             # Confusion Matrix Artifact
-            cm = confusion_matrix(y_val, y_pred_val)
+            cm = confusion_matrix(y_val, y_pred_val, labels=[0, 1, 2])
             cm_path = str(MODEL_DIR / f"cm_{name.lower()}.png")
             plot_and_save_confusion_matrix(cm, class_names, cm_path)
             mlflow.log_artifact(cm_path)
@@ -247,29 +286,76 @@ def train_and_evaluate_models():
     test_accuracy = accuracy_score(y_test, y_pred_test)
     test_macro_f1 = f1_score(y_test, y_pred_test, average="macro", zero_division=0)
     test_weighted_f1 = f1_score(y_test, y_pred_test, average="weighted", zero_division=0)
-    test_report = classification_report(y_test, y_pred_test, target_names=class_names, output_dict=True)
+    test_fatal_fnr = false_negative_rate(y_test, y_pred_test, 2)
+    test_serious_fnr = false_negative_rate(y_test, y_pred_test, 1)
+    try:
+        test_roc_auc = float(roc_auc_score(y_test, best_pipeline.predict_proba(X_test), multi_class="ovr", average="macro"))
+    except Exception:
+        test_roc_auc = None
+    test_report = classification_report(y_test, y_pred_test, labels=[0, 1, 2], target_names=class_names,
+                                        output_dict=True, zero_division=0)
     test_report["overall_accuracy"] = test_accuracy
     test_report["champion_model"] = best_model_name
-    
-    # Log champion model to MLflow
-    with mlflow.start_run(run_name=f"Production_{best_model_name}"):
-        mlflow.log_metric("overall_accuracy", test_accuracy)
-        mlflow.log_metric("test_macro_f1", test_macro_f1)
-        mlflow.log_metric("test_weighted_f1", test_weighted_f1)
-        mlflow.set_tag("imbalance_technique", "SMOTE + Hyperparameter Optimization")
-        mlflow.sklearn.log_model(best_pipeline, artifact_path="model")
-        
+    test_report["fatal_fnr"] = test_fatal_fnr
+    test_report["serious_fnr"] = test_serious_fnr
+    test_report["roc_auc_ovr"] = test_roc_auc
+    test_report["split_sizes"] = {"train": len(X_train), "val": len(X_val), "test": len(X_test)}
+
+    test_cm_path = str(MODEL_DIR / "cm_test_champion.png")
+    plot_and_save_confusion_matrix(confusion_matrix(y_test, y_pred_test, labels=[0, 1, 2]), class_names, test_cm_path)
+
+    # Log champion model to MLflow and register it
+    with mlflow.start_run(run_name=f"Production_{best_model_name}") as run:
+        mlflow.log_metrics({
+            "overall_accuracy": test_accuracy,
+            "test_macro_f1": test_macro_f1,
+            "test_weighted_f1": test_weighted_f1,
+            "test_fatal_recall": 1 - test_fatal_fnr,
+            "test_serious_recall": 1 - test_serious_fnr,
+            "test_fatal_fnr": test_fatal_fnr,
+            "test_serious_fnr": test_serious_fnr,
+        })
+        if test_roc_auc is not None:
+            mlflow.log_metric("test_roc_auc", test_roc_auc)
+        mlflow.log_param("champion_model", best_model_name)
+        mlflow.set_tag("imbalance_technique", "SMOTE + class weights")
+        mlflow.log_artifact(test_cm_path)
+        registered_version = log_and_register_model(best_pipeline)
+        run_id = run.info.run_id
+
     model_save_path = MODEL_DIR / "accident_severity_model.joblib"
-    joblib.dump(best_pipeline, model_save_path)
+    joblib.dump(best_pipeline, model_save_path, compress=3)
     logger.info(f"Saved complete inference pipeline to: {model_save_path}")
-    
-    # Save test evaluation report
-    report_path = MODEL_DIR / "test_evaluation_report.json"
+
     import json
+    import datetime
+    report_path = MODEL_DIR / "test_evaluation_report.json"
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(test_report, f, indent=2)
-        
     logger.info(f"Saved test evaluation report to: {report_path}")
+
+    metadata = {
+        "registered_model_name": REGISTERED_MODEL_NAME,
+        "registered_version": registered_version,
+        "alias": CHAMPION_ALIAS,
+        "model_version": f"{REGISTERED_MODEL_NAME}/v{registered_version}",
+        "mlflow_run_id": run_id,
+        "champion_algorithm": best_model_name,
+        "trained_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "training_rows": len(X_train),
+        "features": {"numeric": NUMERIC_FEATURES, "categorical": CATEGORICAL_FEATURES},
+        "baseline_test_metrics": {
+            "macro_f1": test_macro_f1,
+            "accuracy": test_accuracy,
+            "fatal_fnr": test_fatal_fnr,
+            "serious_fnr": test_serious_fnr,
+        },
+    }
+    with open(MODEL_DIR / "model_metadata.json", "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2)
+
+    logger.info(f"Test results - Macro F1: {test_macro_f1:.4f}, Fatal recall: {1 - test_fatal_fnr:.4f}, "
+                f"Serious recall: {1 - test_serious_fnr:.4f}")
     return best_model_name, test_macro_f1
 
 

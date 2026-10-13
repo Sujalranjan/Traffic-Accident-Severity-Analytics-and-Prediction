@@ -93,10 +93,10 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].fillna("Unknown").astype(str)
             
-    # Fill numeric NAs
+    # Coerce numerics; missing values (e.g. no weather match) are imputed inside the pipeline
     for col in NUMERIC_FEATURES:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+            df[col] = pd.to_numeric(df[col], errors="coerce")
             
     return df
 
@@ -106,7 +106,7 @@ def build_preprocessor_pipeline() -> ColumnTransformer:
     Constructs a robust Scikit-Learn ColumnTransformer pipeline.
     """
     num_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="median")),
+        ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
         ("scaler", StandardScaler())
     ])
     
@@ -132,7 +132,9 @@ def get_chronological_splits(df: pd.DataFrame, train_ratio: float = 0.70, val_ra
     df = engineer_features(df)
     
     # Sort chronologically by date and hour
-    df["datetime_sort"] = pd.to_datetime(df["full_date"]) + pd.to_timedelta(df["hour"], unit="h")
+    # full_date is stored as ISO YYYY-MM-DD by the ETL
+    full_date = pd.to_datetime(df["full_date"].astype(str).str.slice(0, 10), format="%Y-%m-%d")
+    df["datetime_sort"] = full_date + pd.to_timedelta(df["hour"], unit="h")
     df = df.sort_values(by="datetime_sort").reset_index(drop=True)
     
     n = len(df)

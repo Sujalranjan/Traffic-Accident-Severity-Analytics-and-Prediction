@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import os
+import json
 import time
 import joblib
 import datetime
@@ -40,14 +41,61 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 START_TIME = time.time()
-MODEL_PATH = os.getenv("MODEL_PATH", "models/accident_severity_model.joblib")
+MODEL_PATH = os.getenv("MODEL_PATH", str(PROJECT_ROOT / "models" / "accident_severity_model.joblib"))
+MODEL_METADATA_PATH = Path(MODEL_PATH).with_name("model_metadata.json")
 MODEL_PIPELINE = None
-MODEL_VERSION = "v1.0.0"
+LOG_PREDICTIONS = os.getenv("LOG_PREDICTIONS", "true").lower() == "true"
+
+
+def _model_version() -> str:
+    """Registered MLflow model version written by the training pipeline."""
+    try:
+        with open(MODEL_METADATA_PATH, encoding="utf-8") as f:
+            return json.load(f).get("model_version", "unregistered")
+    except (OSError, ValueError):
+        return "unregistered"
+
+
+MODEL_VERSION = _model_version()
 
 # Performance counters
 REQUEST_COUNT = 0
+FAILURE_COUNT = 0
+LOG_FAILURE_COUNT = 0
 TOTAL_INFERENCE_TIME_MS = 0.0
+PREDICTED_CLASS_COUNTS = {"Fatal": 0, "Serious": 0, "Slight": 0}
+
+
+def log_prediction(input_data, code: int, probas, latency_ms: float):
+    """Best-effort write to prediction_log; a logging failure never fails the request."""
+    global LOG_FAILURE_COUNT
+    if not LOG_PREDICTIONS:
+        return
+    try:
+        from sqlalchemy import text
+        from src.etl.db import get_engine
+        with get_engine().begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO prediction_log (accident_index, request_payload, predicted_severity_code,
+                                                p_fatal, p_serious, p_slight, model_version, latency_ms, predicted_at)
+                    VALUES (:idx, :payload, :code, :pf, :ps, :pl, :ver, :lat, :at)
+                """),
+                {
+                    "idx": input_data.accident_index,
+                    "payload": input_data.model_dump_json(),
+                    "code": code,
+                    "pf": float(probas[2]), "ps": float(probas[1]), "pl": float(probas[0]),
+                    "ver": MODEL_VERSION,
+                    "lat": latency_ms,
+                    "at": datetime.datetime.now(datetime.timezone.utc),
+                },
+            )
+    except Exception as e:
+        LOG_FAILURE_COUNT += 1
+        logger.warning(f"Prediction log write failed: {e}")
 
 
 def get_model():
@@ -115,11 +163,12 @@ def predict_severity(input_data: AccidentFeatureInput):
     Predicts accident severity for a given set of environmental, temporal, and road features.
     Returns predicted class (Fatal, Serious, Slight), probabilities, and risk score.
     """
-    global REQUEST_COUNT, TOTAL_INFERENCE_TIME_MS
+    global REQUEST_COUNT, FAILURE_COUNT, TOTAL_INFERENCE_TIME_MS
     t0 = time.time()
-    
+
     model = get_model()
     if model is None:
+        FAILURE_COUNT += 1
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Model is not loaded. Please train or provide model artifact."
@@ -148,7 +197,9 @@ def predict_severity(input_data: AccidentFeatureInput):
         elapsed_ms = (time.time() - t0) * 1000.0
         REQUEST_COUNT += 1
         TOTAL_INFERENCE_TIME_MS += elapsed_ms
-        
+        PREDICTED_CLASS_COUNTS[idx_to_label[pred_class_idx]] += 1
+        log_prediction(input_data, idx_to_code[pred_class_idx], probas, elapsed_ms)
+
         return PredictionResult(
             predicted_severity_code=idx_to_code[pred_class_idx],
             predicted_severity_label=idx_to_label[pred_class_idx],
@@ -158,6 +209,7 @@ def predict_severity(input_data: AccidentFeatureInput):
             inference_timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat()
         )
     except Exception as e:
+        FAILURE_COUNT += 1
         logger.error(f"Inference error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -181,13 +233,28 @@ def predict_batch(batch_request: BatchPredictionRequest):
 def prometheus_metrics():
     """Prometheus monitoring metrics endpoint."""
     avg_latency = (TOTAL_INFERENCE_TIME_MS / REQUEST_COUNT) if REQUEST_COUNT > 0 else 0.0
+    class_lines = "".join(
+        f'model_predictions_total{{severity="{label}"}} {count}\n' for label, count in PREDICTED_CLASS_COUNTS.items()
+    )
     metrics_text = (
-        f"# HELP model_requests_total Total number of predictions requested\n"
+        f"# HELP model_requests_total Total number of successful predictions\n"
         f"# TYPE model_requests_total counter\n"
         f"model_requests_total {REQUEST_COUNT}\n\n"
+        f"# HELP model_request_failures_total Prediction requests that failed (model missing or inference error)\n"
+        f"# TYPE model_request_failures_total counter\n"
+        f"model_request_failures_total {FAILURE_COUNT}\n\n"
+        f"# HELP prediction_log_failures_total Predictions that could not be written to prediction_log\n"
+        f"# TYPE prediction_log_failures_total counter\n"
+        f"prediction_log_failures_total {LOG_FAILURE_COUNT}\n\n"
+        f"# HELP model_predictions_total Predictions served per severity class\n"
+        f"# TYPE model_predictions_total counter\n"
+        f"{class_lines}\n"
         f"# HELP model_inference_avg_latency_ms Average inference latency in ms\n"
         f"# TYPE model_inference_avg_latency_ms gauge\n"
-        f"model_inference_avg_latency_ms {avg_latency:.2f}\n"
+        f"model_inference_avg_latency_ms {avg_latency:.2f}\n\n"
+        f"# HELP model_info Registered model version currently served\n"
+        f"# TYPE model_info gauge\n"
+        f'model_info{{version="{MODEL_VERSION}"}} 1\n'
     )
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(content=metrics_text)

@@ -117,10 +117,11 @@ with m1:
 with m2:
     st.metric("Balanced Macro-F1", f"{macro_f1:.2f}", help="Unweighted harmonic mean of precision and recall giving equal evaluation weight to fatal and serious categories.")
 with m3:
-    st.metric("Class Imbalance Strategy", "SMOTE Resampling", help="Synthetic Minority Over-sampling Technique applied to balance the fatal crash minority distribution.")
+    fatal_recall = 1 - model_metrics["fatal_fnr"] if "fatal_fnr" in model_metrics else model_metrics.get("Fatal", {}).get("recall", 0.0)
+    st.metric("Fatal Recall (test)", f"{fatal_recall * 100:.1f}%", help="Share of fatal collisions in the hold-out test period that the model flags as Fatal (1 - false-negative rate). Imbalance handling: SMOTE + class weights.")
 with m4:
-    champion_name = model_metrics.get("champion_model", "LightGBM")
-    st.metric("Production Champion", champion_name, help="Selected best-performing model logged in MLflow registry.")
+    champion_name = model_metrics.get("champion_model", "Unknown")
+    st.metric("Production Champion", champion_name, help="Best validation macro-F1 model, registered in the MLflow Model Registry with the 'champion' alias.")
 
 st.divider()
 
@@ -138,19 +139,22 @@ else:
             day_name = st.selectbox("Day of Week", ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], index=4)
             urban_rural = st.selectbox("Area Type", ["Urban", "Rural"], index=0)
             road_type = st.selectbox("Road Classification", [
-                "Single carriageway", "Dual carriageway", "Roundabout", "One way street", "Slip road"
+                "Single carriageway", "Dual carriageway", "Roundabout", "One way street", "Slip road",
+                "One way street/Slip road", "Unknown"
             ], index=0)
             speed_limit = st.select_slider("Speed Limit (MPH)", options=[20, 30, 40, 50, 60, 70], value=30)
             
         with c2:
             weather_condition = st.selectbox("Weather Condition", [
-                "Fine no high winds", "Raining no high winds", "Raining + high winds", "Fog or mist", "Snowing"
+                "Fine no high winds", "Raining no high winds", "Snowing no high winds", "Fine + high winds",
+                "Raining + high winds", "Snowing + high winds", "Fog or mist", "Other", "Unknown"
             ], index=1)
             road_surface = st.selectbox("Road Surface Condition", [
-                "Dry", "Wet or damp", "Frost or ice", "Snow", "Flood over 3cm"
+                "Dry", "Wet or damp", "Snow", "Frost or ice", "Flood over 3cm. deep", "Oil or diesel", "Mud"
             ], index=1)
             light_conditions = st.selectbox("Light Conditions", [
-                "Daylight", "Darkness - lights lit", "Darkness - lights unlit", "Darkness - no lighting"
+                "Daylight", "Darkness - lights lit", "Darkness - lights unlit", "Darkness - no lighting",
+                "Darkness - lighting unknown"
             ], index=1)
             num_vehicles = st.number_input("Vehicles Involved", min_value=1, max_value=10, value=2)
             num_casualties = st.number_input("Casualties Involved", min_value=1, max_value=10, value=1)
@@ -245,4 +249,5 @@ else:
         st.plotly_chart(fig_prob, use_container_width=True)
         
         # Model Details
-        st.caption(f"Operational Model: `{type(model_pipeline.named_steps['classifier']).__name__}` | Imbalance Handling: Cost-Sensitive Class Weighting")
+        model_type = type(model_pipeline.named_steps["classifier"]).__name__ if hasattr(model_pipeline, "named_steps") else "Heuristic fallback (model artifact unavailable)"
+        st.caption(f"Operational Model: `{model_type}` | Imbalance Handling: SMOTE + class weights")

@@ -141,13 +141,21 @@ with tab3:
             st.markdown("#### Severity Class Shift (Ref vs. Current)")
             class_data = report.get("class_distribution", {})
             st.json(class_data)
+
+        c3, c4 = st.columns(2)
+        with c3:
+            st.markdown("#### Model Performance & False-Negative Rates (current window)")
+            st.json(report.get("model_performance", {"evaluated": False}))
+        with c4:
+            st.markdown("#### Live Predictions (prediction_log)")
+            st.json(report.get("live_predictions", {}))
     else:
         st.info("Click 'Run On-Demand Drift Analysis' to compute drift indicators.")
 
 with tab4:
     st.subheader("🔄 Apache Airflow Orchestrated DAG Workflow")
     st.markdown("""
-    The automated end-to-end pipeline is governed by the DAG: **`accident_severity_pipeline`** located at [`dags/accident_pipeline_dag.py`](file:///d:/College/mlops/dags/accident_pipeline_dag.py).
+    The automated end-to-end pipeline is governed by the DAG: **`accident_severity_pipeline`** located at `dags/accident_pipeline_dag.py`.
     """)
     
     # Airflow DAG Graph Representation
@@ -181,6 +189,10 @@ with tab4:
             <div style="color: #64748B; font-size: 1.5rem;">➔</div>
             <div style="background: #1E293B; border: 1px solid #F97316; border-radius: 8px; padding: 0.8rem 1rem; color: #F97316; font-weight: 600; text-align: center;">
                 7. drift_and_retrain_check<br><span style="font-size: 0.75rem; color: #94A3B8;">MLOps Monitoring</span>
+            </div>
+            <div style="color: #64748B; font-size: 1.5rem;">➔</div>
+            <div style="background: #1E293B; border: 1px dashed #F97316; border-radius: 8px; padding: 0.8rem 1rem; color: #F97316; font-weight: 600; text-align: center;">
+                8. retrain_and_register_model<br><span style="font-size: 0.75rem; color: #94A3B8;">Only if a trigger fires</span>
             </div>
         </div>
     </div>

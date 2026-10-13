@@ -64,9 +64,12 @@ else:
     st.sidebar.subheader("Map Controls")
     selected_sev = st.sidebar.multiselect("Filter Severity", options=["Fatal", "Serious", "Slight"], default=["Fatal", "Serious", "Slight"])
     plot_df = df[df["severity_name"].isin(selected_sev)]
-    
+    # The full DfT dataset has hundreds of thousands of points; draw a sample on the map
+    MAX_MAP_POINTS = 60000
+    map_df = plot_df.sample(MAX_MAP_POINTS, random_state=42) if len(plot_df) > MAX_MAP_POINTS else plot_df
+
     # PyDeck Map
-    st.subheader(f"Spatial Density Map ({len(plot_df):,} Points)")
+    st.subheader(f"Spatial Density Map ({len(map_df):,} of {len(plot_df):,} Points)")
     
     mid_lat = plot_df["latitude"].mean()
     mid_lon = plot_df["longitude"].mean()
@@ -81,7 +84,7 @@ else:
     # Hexagon Layer for 3D Density
     hex_layer = pdk.Layer(
         "HexagonLayer",
-        data=plot_df,
+        data=map_df,
         get_position=["longitude", "latitude"],
         radius=5000,
         elevation_scale=50,
@@ -93,7 +96,7 @@ else:
     # Scatterplot Layer for individual points
     scatter_layer = pdk.Layer(
         "ScatterplotLayer",
-        data=plot_df,
+        data=map_df,
         get_position=["longitude", "latitude"],
         get_color="color",
         get_radius=1500,
@@ -130,7 +133,7 @@ else:
             orientation="h",
             color="Total_Accidents",
             color_continuous_scale="Viridis",
-            title="Top Urban Authorities"
+            title="Top Local Authorities (ONS code)"
         )
         fig_top.update_layout(yaxis=dict(autorange="reversed"))
         st.plotly_chart(fig_top, use_container_width=True)
