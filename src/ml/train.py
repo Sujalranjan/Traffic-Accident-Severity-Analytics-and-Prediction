@@ -360,4 +360,5 @@ def train_and_evaluate_models():
 
 
 if __name__ == "__main__":
-    train_and_evaluate_models()
+    # Non-zero exit lets the Airflow retrain task fail visibly when there is nothing to train on
+    sys.exit(0 if train_and_evaluate_models() is not None else 1)

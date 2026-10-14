@@ -9,6 +9,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+import os
 import json
 import streamlit as st
 import pandas as pd
@@ -75,7 +76,8 @@ with tab3:
     # Load latest report or run if not present
     report = st.session_state.get("drift_report")
     if not report:
-        reports_dir = Path("reports")
+        # In Docker this points at the drift reports written by Airflow
+        reports_dir = Path(os.getenv("REPORTS_DIR", "reports"))
         report_files = sorted(reports_dir.glob("drift_report_*.json"), reverse=True)
         if report_files:
             with open(report_files[0], "r", encoding="utf-8") as f:

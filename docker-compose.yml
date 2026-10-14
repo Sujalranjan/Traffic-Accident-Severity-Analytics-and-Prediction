@@ -20,8 +20,10 @@ x-airflow-common: &airflow-common
     - ./sql:/opt/airflow/sql
     - ./data:/opt/airflow/data
     - ./datasets:/opt/airflow/datasets
-    - ./models:/opt/airflow/models
-    - ./reports:/opt/airflow/reports
+    # Retrained models and drift reports stay in Docker volumes (seeded from the image on first
+    # start), so Airflow never overwrites the committed files in models/ and reports/
+    - airflow_models:/opt/airflow/models
+    - airflow_reports:/opt/airflow/reports
 
 services:
   # 1. PostgreSQL + PostGIS warehouse (also hosts Airflow's metadata DB)
@@ -122,12 +124,19 @@ services:
       - "8501:8501"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-traffic_accidents}
+      REPORTS_DIR: /app/airflow_reports
     volumes:
-      - ./reports:/app/reports
+      # Read-only view of the drift reports written by the Airflow monitoring task. Mounted at a
+      # path that is empty in this image, so Airflow (not this root-owned image) seeds the volume.
+      - airflow_reports:/app/airflow_reports:ro
     depends_on:
       postgres:
         condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:
   mlflow_data:
+  airflow_models:
+  airflow_reports:

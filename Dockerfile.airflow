@@ -20,3 +20,7 @@ RUN pip install --no-cache-dir \
     "matplotlib>=3.7,<4" \
     "email-validator>=2.0" \
     "pyopenssl>=25,<26"
+
+# Seed for the airflow_models / airflow_reports volumes: the committed champion and reports
+COPY --chown=airflow:root models/ /opt/airflow/models/
+COPY --chown=airflow:root reports/ /opt/airflow/reports/

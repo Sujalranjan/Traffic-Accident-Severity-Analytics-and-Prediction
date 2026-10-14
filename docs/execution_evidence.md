@@ -99,7 +99,7 @@ Reference window 2021-01-01 to 2024-06-27, current window 2024-06-27 to 2025-12-
 
 ## 6. Automated Tests
 ```text
-14 passed
+15 passed
 ```
 Tests run against a temporary SQLite warehouse and a DfT-format fixture (`tests/conftest.py`), covering day-first date parsing, code decoding, weather join keys, ingestion row counts, quarantine rules, idempotent re-runs, mart refresh, the DAG call signature, model prediction, `/health`, `/predict` with prediction logging, and `/metrics` counters.
 
@@ -122,5 +122,7 @@ DAG `accident_severity_pipeline`, run `manual__2026-10-13T20:33:21`: all 9 tasks
 PostGIS warehouse after the runs: 513,745 facts, 385,740 weather observations (100% from Open-Meteo), 512,323 locations with PostGIS geometry, marts rebuilt.
 
 Retrained champion in Docker (same 359,621-row training split): XGBoost, test macro-F1 0.373, ROC-AUC 0.642, Fatal recall 0.242, Serious recall 0.182. LightGBM and XGBoost are within 0.001 macro-F1 on validation, so either can win a given run. The committed artifact in `models/` is the local LightGBM champion described above (local registry version 2, re-saved with scikit-learn 1.7.2).
+
+Model isolation (14 Oct): an Airflow-trained model had been committed from the shared `models/` folder and broke Streamlit Cloud (`No module named 'dill'`). Airflow now writes to Docker volumes and trains in a separate process; a verification run (`manual__2026-10-14T12:39:53`, all 9 tasks succeeded) produced a retrained model with no `dill` reference and left `models/` untouched. `tests/test_pipeline.py` now fails if a committed model references `dill`.
 
 Recovery behaviour observed: two earlier overlapping runs (before `max_active_runs=1`) had staged the file twice. The fixed pipeline processed everything left in staging, loaded each collision once, and quarantined the second copy as `DUPLICATE_ACCIDENT_INDEX`.

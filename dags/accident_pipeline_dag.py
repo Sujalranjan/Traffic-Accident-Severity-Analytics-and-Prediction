@@ -85,12 +85,17 @@ def airflow_should_retrain(**context):
 
 
 def airflow_retrain_model():
-    from src.ml.train import train_and_evaluate_models
-    result = train_and_evaluate_models()
-    if result is None:
-        raise RuntimeError("Retraining skipped: not enough data in the warehouse")
-    champion, macro_f1 = result
-    print(f"Retrained and registered new champion: {champion} (test macro-F1 {macro_f1:.4f})")
+    import subprocess
+    # Train in a separate interpreter: Airflow loads an old version of dill that alters
+    # pickling, and a model saved inside the task process would then need dill to load.
+    result = subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "src" / "ml" / "train.py")],
+        cwd=str(PROJECT_ROOT), capture_output=True, text=True,
+    )
+    print(result.stdout[-5000:])
+    print(result.stderr[-5000:])
+    if result.returncode != 0:
+        raise RuntimeError(f"Retraining failed with exit code {result.returncode}")
 
 
 with DAG(

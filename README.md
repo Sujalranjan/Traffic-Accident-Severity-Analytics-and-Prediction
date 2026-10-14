@@ -158,7 +158,7 @@ docker compose up --build
 - **MLflow Tracking Server & Registry**: [http://localhost:5000](http://localhost:5000)
 - **Airflow Webserver** (admin / admin): [http://localhost:8080](http://localhost:8080)
 
-The Airflow services use a custom image (`Dockerfile.airflow`) with the pipeline's packages pre-installed, mount `datasets/`, `data/`, `models/` and `reports/`, write to the PostGIS warehouse and log to the MLflow server. Unpause `accident_severity_pipeline` in the Airflow UI and trigger it; only one run executes at a time.
+The Airflow services use a custom image (`Dockerfile.airflow`) with the pipeline's packages pre-installed, mount `datasets/` and `data/`, write to the PostGIS warehouse and log to the MLflow server. Retrained models and drift reports are kept in Docker volumes (`airflow_models`, `airflow_reports`), which start from the committed `models/` and `reports/`, so Airflow never overwrites the files in the repository. The retrain task runs training in a separate Python process, because Airflow loads an old `dill` that would otherwise make the saved model depend on `dill`. Unpause `accident_severity_pipeline` in the Airflow UI and trigger it; only one run executes at a time.
 
 ---
 

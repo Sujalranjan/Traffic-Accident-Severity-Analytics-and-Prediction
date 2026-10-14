@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-14T07:08:05.843202+00:00",
+  "timestamp": "2026-10-14T12:33:40.508134+00:00",
   "reference_records": 359621,
   "current_records": 154124,
   "reference_period": [
@@ -58,7 +58,7 @@
       "Serious": 0.2439,
       "Slight": 0.7415
     },
-    "chi2": 342.9377,
+    "chi2": 342.6682,
     "p_value": 0.0,
     "max_share_change": 0.0236,
     "drift_detected": true
@@ -78,7 +78,7 @@
     }
   },
   "live_predictions": {
-    "logged_predictions": 1,
+    "logged_predictions": 0,
     "labelled_predictions": 0
   },
   "thresholds": {

@@ -168,3 +168,10 @@ def test_revalidating_a_staged_batch_does_not_duplicate_quarantine(dft_csv, tmp_
     assert once == before + 1
     assert _count("SELECT COUNT(*) FROM quarantine_rejected_records") == once
     run_etl_pipeline(batch_id=batch_id, persist_rejections=False)
+
+
+def test_committed_model_loads_without_airflow_dependencies():
+    """The committed artifact must not reference dill (pulled in by Airflow), or Streamlit Cloud cannot load it."""
+    import zlib
+    raw = zlib.decompress((PROJECT_ROOT / "models" / "accident_severity_model.joblib").read_bytes())
+    assert b"dill" not in raw
